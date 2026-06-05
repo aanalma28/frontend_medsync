@@ -189,7 +189,7 @@
 				</button>
 				<div bind:this={testimonialTrack} class="overflow-x-auto pb-2 pl-12 pr-12 scrollbar-none">
 					<div class="flex min-w-max gap-6">
-						{#each testimonials as person}
+						{#each testimonials as person (person.name)}
 							<article class="w-[320px] rounded-[24px] border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur sm:w-[340px]">
 								<div class="flex items-center gap-3">
 									<img src={person.image} alt={person.name} class="h-12 w-12 rounded-full object-cover" />
@@ -229,8 +229,8 @@
 				<p class="mt-1 text-sm text-slate-600">Berobat Cepat hanya di MedSync.</p>
 			</div>
 			<div class="flex flex-wrap gap-3">
-				{#each socialLinks as item}
-					<a href={item.href} class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-300 hover:text-sky-700">
+				{#each socialLinks as item (item.label)}
+					<a href={item.href} rel="external" class="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-300 hover:text-sky-700">
 						{item.label}
 					</a>
 				{/each}

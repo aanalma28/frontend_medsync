@@ -1,272 +1,211 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+    import { browser } from '$app/environment';
+    import Sidebar from '$lib/components/Sidebar.svelte';
 
-	type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
-	type DashboardUser = {
-		role: string;
-		name: string;
-		id: string;
-	};
+    type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
+    
+    function readCookie(name: string) {
+        if (!browser || typeof document === 'undefined') return '';
+        const cookie = document.cookie.split(';').map(item => item.trim()).find(item => item.startsWith(`${name}=`));
+        return cookie ? decodeURIComponent(cookie.substring(name.length + 1)) : '';
+    }
 
-	function readCookie(name: string) {
-		if (!browser || typeof document === 'undefined') return '';
-		const cookie = document.cookie
-			.split(';')
-			.map((item) => item.trim())
-			.find((item) => item.startsWith(`${name}=`));
-		if (!cookie) return '';
-		return decodeURIComponent(cookie.substring(name.length + 1));
-	}
+    let currentUser = $state({ 
+        role: 'apoteker', 
+        name: readCookie('medsync_name') || 'Apoteker', 
+        id: readCookie('medsync_user_id') || 'APT-001' 
+    });
+    
+    let activeMenu = $state('beranda');
+    let isSidebarOpen = $state(false);
 
-	function getSessionFromCookie() {
-		const role = readCookie('medsync_role') || readCookie('role') || 'apoteker';
-		const name = readCookie('medsync_name') || readCookie('user_name') || readCookie('name') || readCookie('full_name') || 'Apoteker';
-		const id = readCookie('medsync_user_id') || readCookie('user_id') || readCookie('id_apoteker') || '';
-		return { role, name, id };
-	}
+    // DATA DUMMY DENGAN FLAG PRIORITAS/URGENT
+    let prescriptions = $state([
+        { id: 1, patient: 'Ayu Putri', doctor: 'dr. Nanda', time: '08:15 WIB', waitTime: '45 mnt', status: 'Menunggu' as PrescriptionStatus, isUrgent: true, medicines: ['Paracetamol 500mg', 'Amoxicillin 500mg'] },
+        { id: 2, patient: 'Bapak Sudirman', doctor: 'dr. Arif', time: '08:50 WIB', waitTime: '10 mnt', status: 'Menunggu' as PrescriptionStatus, isUrgent: false, medicines: ['Isosorbide Dinitrate 5mg'] },
+        { id: 3, patient: 'Rizky Pratama', doctor: 'dr. Lina', time: '08:00 WIB', waitTime: '-', status: 'Siap ambil' as PrescriptionStatus, isUrgent: false, medicines: ['Omeprazole 20mg'] }
+    ]);
 
-	let currentUser = $state<DashboardUser>({ role: 'apoteker', name: '', id: '' });
-	if (browser) {
-		currentUser = getSessionFromCookie();
-	}
+    let inventory = $state([
+        { name: 'Paracetamol 500mg', category: 'Analgesik', quantity: 42, note: 'Stok aman' },
+        { name: 'Omeprazole 20mg', category: 'Pencernaan', quantity: 6, note: 'Stok Kritis' }
+    ]);
 
-	let prescriptions = $state([
-		{
-			id: 1,
-			patient: 'Ayu Putri',
-			doctor: 'dr. Nanda',
-			time: '08:15 WIB',
-			status: 'Menunggu' as PrescriptionStatus,
-			medicines: ['Paracetamol 500mg', 'Amoxicillin 500mg']
-		},
-		{
-			id: 2,
-			patient: 'Rizky Pratama',
-			doctor: 'dr. Lina',
-			time: '09:05 WIB',
-			status: 'Siap ambil' as PrescriptionStatus,
-			medicines: ['Omeprazole 20mg']
-		},
-		{
-			id: 3,
-			patient: 'Dewi Sartika',
-			doctor: 'dr. Arif',
-			time: '09:40 WIB',
-			status: 'Selesai' as PrescriptionStatus,
-			medicines: ['Metformin 500mg', 'Paracetamol 500mg']
-		}
-	]);
+    let pickupQueue = $state([
+        { patient: 'Rizky Pratama', medicine: 'Omeprazole 20mg', time: 'Menunggu di Loket' }
+    ]);
+    
+    let searchQuery = $state('');
+    let verifyNote = $state('');
+    let verifiedIds = $state<number[]>([]);
 
-	let inventory = $state([
-		{ name: 'Paracetamol 500mg', category: 'Analgesik', quantity: 42, note: 'Stok aman' },
-		{ name: 'Amoxicillin 500mg', category: 'Antibiotik', quantity: 8, note: 'Perlu restock' },
-		{ name: 'Omeprazole 20mg', category: 'Pencernaan', quantity: 6, note: 'Stok menipis' },
-		{ name: 'Metformin 500mg', category: 'Diabetes', quantity: 31, note: 'Stok aman' }
-	]);
+    let filteredPrescriptions = $derived(
+        prescriptions.filter(item => item.patient.toLowerCase().includes(searchQuery.toLowerCase()) || item.medicines.some(m => m.toLowerCase().includes(searchQuery.toLowerCase())))
+    );
 
-	let pickupQueue = $state([
-		{ patient: 'Sari Wulandari', medicine: 'Amoxicillin 500mg', time: '10:00 WIB' },
-		{ patient: 'Bima Kurniawan', medicine: 'Omeprazole 20mg', time: '10:20 WIB' }
-	]);
-	let searchQuery = $state('');
-	let verifyNote = $state('');
-	let verifiedIds = $state<number[]>([]);
+    // Mengambil resep prioritas pertama (yang Urgent dan Menunggu)
+    let urgentPrescription = $derived(prescriptions.find(p => p.status === 'Menunggu' && p.isUrgent) || prescriptions.find(p => p.status === 'Menunggu'));
 
-	let filteredPrescriptions = $derived(
-		prescriptions.filter((item) => {
-			const query = searchQuery.toLowerCase();
-			return (
-				item.patient.toLowerCase().includes(query) ||
-				item.doctor.toLowerCase().includes(query) ||
-				item.medicines.some((medicine) => medicine.toLowerCase().includes(query))
-			);
-		})
-	);
+    function updateStatus(id: number, status: PrescriptionStatus) {
+        prescriptions = prescriptions.map(item => (item.id === id ? { ...item, status } : item));
+        if(status === 'Siap ambil' && !pickupQueue.find(p => p.patient === prescriptions.find(x => x.id === id)?.patient)) {
+            const p = prescriptions.find(x => x.id === id)!;
+            pickupQueue = [...pickupQueue, { patient: p.patient, medicine: p.medicines[0], time: 'Baru Saja Siap' }];
+        }
+    }
 
-	function buildPrescriptionPayload(prescription: { patient: string; doctor: string; medicines: string[]; time: string; status: PrescriptionStatus }) {
-		const apotekerId = currentUser.id || readCookie('id_apoteker') || readCookie('medsync_apoteker_id') || '';
-		return {
-			pasien: prescription.patient,
-			dokter: prescription.doctor,
-			detail_obat: prescription.medicines,
-			waktu_pengambilan: prescription.time,
-			status: prescription.status,
-			id_apoteker: apotekerId,
-			catatan_verifikasi: verifyNote || ''
-		};
-	}
-
-	function submitPrescriptionRecord(prescription: { patient: string; doctor: string; medicines: string[]; time: string; status: PrescriptionStatus }) {
-		const payload = buildPrescriptionPayload(prescription);
-		console.log('Payload resep_dokter siap dikirim:', payload);
-		return payload;
-	}
-
-	function updateStatus(id: number, status: PrescriptionStatus) {
-		prescriptions = prescriptions.map((item) => (item.id === id ? { ...item, status } : item));
-		const selected = prescriptions.find((item) => item.id === id);
-		if (selected) {
-			submitPrescriptionRecord(selected);
-		}
-	}
-
-	function toggleVerification(id: number) {
-		verifiedIds = verifiedIds.includes(id)
-			? verifiedIds.filter((itemId) => itemId !== id)
-			: [...verifiedIds, id];
-	}
+    function toggleVerification(id: number) {
+        verifiedIds = verifiedIds.includes(id) ? verifiedIds.filter(itemId => itemId !== id) : [...verifiedIds, id];
+    }
 </script>
 
-<svelte:head>
-	<title>Dashboard Apoteker | MedSync</title>
-</svelte:head>
+<div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
+    <Sidebar role="admin" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
 
-<div class="min-h-screen bg-[linear-gradient(90deg,_#fffaf2_0%,_#f7f9ff_100%)] px-3 py-4 text-slate-900 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-	<div class="mx-auto flex max-w-7xl flex-col gap-4 sm:gap-6">
-		<header class="rounded-[24px] border border-amber-200 bg-gradient-to-r from-amber-800 to-orange-600 p-4 text-white shadow-[0_20px_60px_-35px_rgba(245,158,11,0.45)] backdrop-blur sm:rounded-[28px] sm:p-6">
-			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-				<div class="min-w-0">
-					<p class="text-xs font-semibold uppercase tracking-[0.3em] text-amber-100 sm:text-sm">Dashboard Apoteker</p>
-					<h1 class="mt-2 text-xl font-semibold leading-snug text-white sm:text-2xl lg:text-3xl">
-						Verifikasi resep, cek stok, dan bantu pengambilan obat
-					</h1>
-				</div>
-				<div class="rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 text-sm text-amber-50 sm:px-4 sm:py-3">
-					<span class="font-semibold">Shift siang</span> • 10:00 WIB • Apotek Medika Sehat
-				</div>
-			</div>
-			<div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-				<div class="text-sm font-semibold text-amber-50">
-					Selamat datang, {currentUser.name || 'Apoteker'}
-				</div>
-				<div class="flex flex-wrap items-center gap-2 text-sm text-amber-100">
-					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">Login sebagai {currentUser.name || 'Apoteker'}</span>
-					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">{currentUser.id ? `ID: ${currentUser.id}` : 'ID belum tersedia'}</span>
-				</div>
-			</div>
-		</header>
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+        <header class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden">
+            <!-- svelte-ignore a11y_consider_explicit_label -->
+            <button onclick={() => isSidebarOpen = true} class="text-amber-700"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-7 w-7"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg></button>
+            <div class="rounded-full bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700">ID: {currentUser.id}</div>
+        </header>
 
-		<section class="grid gap-3 sm:grid-cols-3 sm:gap-4">
-			<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-				<p class="text-sm text-slate-600">Resep menunggu</p>
-				<p class="mt-2 text-2xl font-semibold text-slate-900">{prescriptions.filter((item) => item.status === 'Menunggu').length}</p>
-			</div>
-			<div class="rounded-2xl border border-amber-200 bg-orange-50 p-4 shadow-sm">
-				<p class="text-sm text-slate-600">Siap diambil</p>
-				<p class="mt-2 text-2xl font-semibold text-slate-900">{prescriptions.filter((item) => item.status === 'Siap ambil').length}</p>
-			</div>
-			<div class="rounded-2xl border border-amber-200 bg-amber-100 p-4 shadow-sm">
-				<p class="text-sm text-slate-600">Pengambilan hari ini</p>
-				<p class="mt-2 text-2xl font-semibold text-slate-900">{pickupQueue.length}</p>
-			</div>
-		</section>
+        <div class="flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10">
+            
+            <!-- HEADER HERO APOTEKER -->
+            <div class="mb-8 relative overflow-hidden rounded-[24px] bg-gradient-to-br from-slate-900 via-stone-900 to-amber-900 p-6 text-white shadow-xl sm:p-8">
+                <div class="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500/20 blur-3xl"></div>
+                <div class="absolute bottom-0 right-5 opacity-10">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-32 w-32"><path d="M11.47 3.84a.75.75 0 011.06 0l8.99 9a.75.75 0 11-1.06 1.06l-.46-.46V20.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-2.5a.75.75 0 00-.75.75v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 01-.75-.75v-7.06l-.46.46a.75.75 0 11-1.06-1.06l8.99-9zM12 7.5a.75.75 0 00-.75.75v1.5H9.75a.75.75 0 000 1.5h1.5v1.5a.75.75 0 001.5 0v-1.5h1.5a.75.75 0 000-1.5h-1.5v-1.5A.75.75 0 0012 7.5z" /></svg>
+                </div>
+                
+                <div class="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <div class="mb-3 flex items-center gap-2">
+                            <span class="relative flex h-2.5 w-2.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span></span>
+                            <p class="text-[11px] font-bold uppercase tracking-widest text-amber-200">Sistem Farmasi Aktif</p>
+                        </div>
+                        <h1 class="text-3xl font-black sm:text-4xl">Halo, Apoteker {currentUser.name}! 💊</h1>
+                        <p class="mt-2 text-sm text-slate-300 sm:text-base">Ada <strong class="text-white">{prescriptions.filter(p => p.status === 'Menunggu').length} resep</strong> menunggu diracik, dan <strong class="text-white">{pickupQueue.length} pasien</strong> di loket.</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur-md shadow-inner">
+                        <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">ID Apoteker</p>
+                        <p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.id}</p>
+                    </div>
+                </div>
+            </div>
 
-		<div class="grid gap-5 xl:grid-cols-[1.25fr_0.8fr]">
-			<section class="rounded-[24px] border border-amber-200 bg-white p-4 shadow-[0_16px_44px_-32px_rgba(15,23,42,0.35)] sm:rounded-[28px] sm:p-6 lg:p-7">
-				<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-					<div class="min-w-0">
-						<p class="text-sm font-semibold text-amber-700">Antrian resep</p>
-						<h2 class="mt-1 text-lg font-semibold text-slate-900 sm:text-xl">Verifikasi dan proses obat</h2>
-					</div>
-					<button class="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 sm:w-auto">
-						Lihat semua resep
-					</button>
-				</div>
+            {#if activeMenu === 'beranda'}
+                <!-- STATISTIK -->
+                <section class="mb-6 grid gap-4 sm:grid-cols-3">
+                    <div class="rounded-2xl border border-rose-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm font-bold text-slate-500">Antrean Resep</p>
+                        <p class="mt-2 text-3xl font-black text-rose-600">{prescriptions.filter(p => p.status === 'Menunggu').length}</p>
+                    </div>
+                    <div class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm font-bold text-slate-500">Siap Serah Terima</p>
+                        <p class="mt-2 text-3xl font-black text-emerald-600">{prescriptions.filter(p => p.status === 'Siap ambil').length}</p>
+                    </div>
+                    <div class="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm font-bold text-slate-500">Total Pasien Hari Ini</p>
+                        <p class="mt-2 text-3xl font-black text-amber-600">{prescriptions.length}</p>
+                    </div>
+                </section>
 
-				<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-					<label class="block text-sm font-medium text-slate-700">
-						<span class="mb-2 block">Cari resep atau nama pasien</span>
-						<input bind:value={searchQuery} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-100" placeholder="Cari pasien, dokter, atau obat" />
-					</label>
-				</div>
+                <!-- MODUL FOKUS UTAMA (EYE-CATCHING) -->
+                {#if urgentPrescription}
+                    <section class="mb-6 rounded-[24px] border-2 border-rose-500 bg-rose-50 p-6 shadow-lg sm:p-8">
+                        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <div class="mb-2 flex items-center gap-2">
+                                    <span class="rounded bg-rose-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-rose-800">Prioritas Racik</span>
+                                    <span class="text-sm font-bold text-rose-600">Menunggu {urgentPrescription.waitTime}</span>
+                                </div>
+                                <h2 class="text-2xl font-black text-slate-900">{urgentPrescription.patient}</h2>
+                                <p class="mt-1 text-sm font-medium text-slate-600">Dari: {urgentPrescription.doctor}</p>
+                            </div>
+                            <div class="rounded-xl bg-white p-4 shadow-sm md:w-1/2">
+                                <p class="text-xs font-bold uppercase text-slate-400">Daftar Obat (Tindakan Segera)</p>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    {#each urgentPrescription.medicines as med (med)}
+                                        <span class="rounded-lg bg-slate-100 px-3 py-1 text-sm font-bold text-slate-800 border border-slate-200">{med}</span>
+                                    {/each}
+                                </div>
+                                <button onclick={() => updateStatus(urgentPrescription.id, 'Siap ambil')} class="mt-4 w-full rounded-xl bg-rose-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-rose-700">Tandai Selesai Diracik</button>
+                            </div>
+                        </div>
+                    </section>
+                {/if}
 
-				<div class="mt-6 space-y-3">
-					{#each filteredPrescriptions as prescription (prescription.id)}
-						<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-							<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-								<div class="min-w-0">
-									<div class="flex flex-wrap items-center gap-2">
-										<h3 class="text-base font-semibold text-slate-900">{prescription.patient}</h3>
-										<span class={`rounded-full px-3 py-1 text-xs font-semibold ${prescription.status === 'Menunggu' ? 'bg-amber-100 text-amber-700' : prescription.status === 'Siap ambil' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
-											{prescription.status}
-										</span>
-									</div>
-									<p class="mt-1 text-sm text-slate-500">Dokter: {prescription.doctor}</p>
-									<p class="mt-1 text-sm text-slate-500">Waktu masuk: {prescription.time}</p>
-								</div>
-								<div class="flex flex-wrap gap-2 sm:justify-end">
-									<button type="button" class="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:text-amber-700" onclick={() => updateStatus(prescription.id, 'Siap ambil')}>
-										Siapkan obat
-									</button>
-									<button type="button" class="rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500" onclick={() => updateStatus(prescription.id, 'Selesai')}>
-										Selesai
-									</button>
-								</div>
-							</div>
-							<div class="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
-								<p class="text-sm font-semibold text-slate-900">Daftar obat</p>
-								<div class="mt-2 flex flex-wrap gap-2">
-									{#each prescription.medicines as medicine, index (index)}
-										<span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">{medicine}</span>
-									{/each}
-								</div>
-								<div class="mt-3 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-									<label class="flex items-center gap-2 text-sm text-slate-700">
-										<input type="checkbox" checked={verifiedIds.includes(prescription.id)} onchange={() => toggleVerification(prescription.id)} class="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
-										<span>Obat sudah sesuai dengan resep</span>
-									</label>
-									<input bind:value={verifyNote} class="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-100" placeholder="Catatan verifikasi" />
-								</div>
-							</div>
-						</article>
-					{/each}
-				</div>
-			</section>
+                <div class="grid gap-6 xl:grid-cols-[1.25fr_0.8fr]">
+                    <!-- KIRI: DAFTAR RESEP -->
+                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+                        <h2 class="mb-5 text-xl font-bold text-slate-900 border-b border-slate-100 pb-4">Semua Antrean Resep</h2>
+                        
+                        <input bind:value={searchQuery} class="mb-5 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100" placeholder="Cari nama pasien atau obat..." />
 
-			<aside class="space-y-4">
-				<div class="rounded-[24px] border border-amber-200 bg-amber-50 p-4 shadow-[0_16px_44px_-32px_rgba(15,23,42,0.35)] sm:rounded-[28px] sm:p-5">
-					<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-						<div class="min-w-0">
-							<p class="text-sm font-semibold text-amber-700">Stok obat</p>
-							<h3 class="mt-1 text-lg font-semibold text-slate-900">Kondisi persediaan</h3>
-						</div>
-						<button class="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
-							Restock
-						</button>
-					</div>
+                        <div class="space-y-4">
+                            {#each filteredPrescriptions as p (p.id)}
+                                <div class={`flex flex-col gap-4 sm:flex-row sm:justify-between rounded-xl border-l-4 bg-slate-50 p-4 shadow-sm ${p.status === 'Menunggu' ? (p.isUrgent ? 'border-l-rose-500' : 'border-l-amber-400') : 'border-l-emerald-400'}`}>
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <p class="font-bold text-slate-900">{p.patient}</p>
+                                            <span class={`rounded px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${p.status === 'Menunggu' ? 'bg-amber-200 text-amber-800' : 'bg-emerald-200 text-emerald-800'}`}>{p.status}</span>
+                                        </div>
+                                        <p class="text-xs font-medium text-slate-500">Waktu: {p.time} • Dokter: {p.doctor}</p>
+                                        <div class="mt-2 flex flex-wrap gap-1">
+                                            {#each p.medicines as med (med)} <span class="rounded bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">{med}</span> {/each}
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col justify-center">
+                                        {#if p.status === 'Menunggu'}
+                                            <button onclick={() => updateStatus(p.id, 'Siap ambil')} class="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50">Selesai Racik</button>
+                                        {:else if p.status === 'Siap ambil'}
+                                            <button onclick={() => updateStatus(p.id, 'Selesai')} class="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-600">Diserahkan</button>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </section>
 
-					<div class="mt-4 space-y-2">
-						{#each inventory as item (item.name)}
-							<div class={`rounded-2xl border p-3 ${item.quantity < 10 ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-								<div class="flex items-start justify-between gap-3">
-									<div>
-										<p class="font-semibold text-slate-900">{item.name}</p>
-										<p class="mt-1 text-xs text-slate-500">{item.category}</p>
-									</div>
-									<span class={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.quantity < 10 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-										{item.quantity} box
-									</span>
-								</div>
-								<p class={`mt-2 text-xs ${item.quantity < 10 ? 'text-amber-700' : 'text-slate-500'}`}>{item.note}</p>
-							</div>
-						{/each}
-					</div>
-				</div>
+                    <!-- KANAN: LOKET & STOK -->
+                    <aside class="space-y-6">
+                        <!-- PANGGILAN LOKET -->
+                        <div class="rounded-[24px] bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                            <h3 class="text-lg font-bold">Loket Penyerahan Obat</h3>
+                            <p class="text-xs text-slate-400">Panggil pasien untuk ambil obat</p>
+                            <div class="mt-4 space-y-3">
+                                {#each pickupQueue as item (item.patient)}
+                                    <div class="flex items-center justify-between rounded-xl border border-white/10 bg-white/10 p-3">
+                                        <div>
+                                            <p class="font-bold text-white">{item.patient}</p>
+                                            <p class="text-xs text-emerald-400">{item.time}</p>
+                                        </div>
+                                        <button class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold hover:bg-emerald-400">Panggil</button>
+                                    </div>
+                                {/each}
+                                {#if pickupQueue.length === 0} <p class="text-sm text-slate-500 text-center py-4">Loket kosong</p> {/if}
+                            </div>
+                        </div>
 
-				<div class="rounded-[24px] border border-amber-200 bg-slate-950 p-4 text-white shadow-[0_16px_44px_-32px_rgba(15,23,42,0.5)] sm:rounded-[28px] sm:p-5">
-					<p class="text-sm font-semibold text-amber-300">Pengambilan obat</p>
-					<h3 class="mt-1 text-lg font-semibold">Jadwal hari ini</h3>
-					<div class="mt-4 space-y-2">
-						{#each pickupQueue as item (item.patient)}
-							<div class="rounded-2xl border border-white/10 bg-white/10 p-3 text-sm">
-								<p class="font-semibold">{item.patient}</p>
-								<p class="mt-1 text-slate-300">{item.medicine}</p>
-								<p class="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">{item.time}</p>
-							</div>
-						{/each}
-					</div>
-				</div>
-			</aside>
-		</div>
-	</div>
+                        <!-- STOK KRITIS -->
+                        <div class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                            <h3 class="mb-4 font-bold text-slate-900">Peringatan Stok Obat</h3>
+                            <div class="space-y-3">
+                                {#each inventory.filter(i => i.quantity < 10) as item (item.category)}
+                                    <div class="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-3">
+                                        <div>
+                                            <p class="text-sm font-bold text-slate-900">{item.name}</p>
+                                            <p class="text-[10px] font-black uppercase text-rose-600">{item.note}</p>
+                                        </div>
+                                        <span class="rounded bg-rose-600 px-2 py-1 text-xs font-bold text-white">{item.quantity}</span>
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            {/if}
+        </div>
+    </main>
 </div>
