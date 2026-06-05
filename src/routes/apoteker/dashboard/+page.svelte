@@ -57,6 +57,21 @@
     function toggleVerification(id: number) {
         verifiedIds = verifiedIds.includes(id) ? verifiedIds.filter(itemId => itemId !== id) : [...verifiedIds, id];
     }
+
+    // --- STATE MENU KELOLA PENGGUNA (APOTEKER) ---
+    let userSearchQuery = $state('');
+    let patientUsers = $state([
+        { id: 'BP-2054', name: 'Ayu Putri', phone: '0812-3456-7890', bpjs: '0001234567891', status: 'Aktif' },
+        { id: 'BP-2055', name: 'Rizky Pratama', phone: '0813-9876-5432', bpjs: '0009876543212', status: 'Aktif' },
+        { id: 'BP-2056', name: 'Dewi Sartika', phone: '0821-1122-3344', bpjs: '-', status: 'Umum' }
+    ]);
+
+    let filteredUsers = $derived(
+        patientUsers.filter(u => 
+            u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) || 
+            u.id.toLowerCase().includes(userSearchQuery.toLowerCase())
+        )
+    );
 </script>
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
@@ -93,7 +108,9 @@
                     </div>
                 </div>
             </div>
-
+            <!-- ===================== -->
+			<!-- MENU 1: BERANDA	   -->
+			<!-- ===================== -->
             {#if activeMenu === 'beranda'}
                 <!-- STATISTIK -->
                 <section class="mb-6 grid gap-4 sm:grid-cols-3">
@@ -205,6 +222,66 @@
                         </div>
                     </aside>
                 </div>
+            <!-- ================================================ -->
+            <!-- MENU 2: DIREKTORI & VERIFIKASI PASIEN (APOTEKER) -->
+            <!-- ================================================ -->      
+            {:else if activeMenu == 'users'}
+                <div class="space-y-6">
+                    
+                    <!-- Header & Pencarian -->
+                    <div class="flex flex-col gap-4 rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-8">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">Direktori & Verifikasi Pasien</h2>
+                            <p class="mt-1 text-sm text-slate-500">Cari data pasien untuk verifikasi pengambilan resep dan validasi nomor BPJS.</p>
+                        </div>
+                        
+                        <div class="w-full sm:w-72">
+                            <input 
+                                bind:value={userSearchQuery} 
+                                class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100" 
+                                placeholder="Cari nama atau ID pasien..." 
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Tabel Daftar Pasien -->
+                    <div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-400">
+                                        <th class="pb-3 px-4">ID Pasien</th>
+                                        <th class="pb-3 px-4">Nama Lengkap</th>
+                                        <th class="pb-3 px-4">No. Telepon / WhatsApp</th>
+                                        <th class="pb-3 px-4">No. BPJS / Asuransi</th>
+                                        <th class="pb-3 px-4">Status</th>
+                                        <th class="pb-3 px-4 text-right">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 text-sm">
+                                    {#each filteredUsers as user (user.id)}
+                                        <tr class="transition hover:bg-slate-50">
+                                            <td class="py-4 px-4 font-bold text-slate-900">{user.id}</td>
+                                            <td class="py-4 px-4 font-semibold text-slate-800">{user.name}</td>
+                                            <td class="py-4 px-4 text-slate-600">{user.phone}</td>
+                                            <td class="py-4 px-4 text-slate-600">{user.bpjs}</td>
+                                            <td class="py-4 px-4">
+                                                <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">{user.status}</span>
+                                            </td>
+                                            <td class="py-4 px-4 text-right">
+                                                <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">Verifikasi</button>
+                                            </td>
+                                        </tr>
+                                    {:else}
+                                        <tr>
+                                            <td colspan="6" class="py-8 text-center text-slate-400">Tidak ada pasien yang ditemukan.</td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>            
             {/if}
         </div>
     </main>

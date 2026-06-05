@@ -95,6 +95,47 @@
 			doctorAppointments = doctorAppointments.map(app => app.id === id ? { ...app, status: 'Dibatalkan' } : app);
 		}
 	}
+    // --- STATE MENU DAFTAR PASIEN (DOKTER) ---
+    let patientSearchQuery = $state('');
+    let patientList = $state([
+        { 
+            id: 'RM-099', 
+            name: 'Ayu Putri', 
+            age: 24, 
+            gender: 'Perempuan', 
+            lastVisit: '30 Juli 2026', 
+            diagnosis: 'Demam dan batuk ringan', 
+            status: 'Rawat Jalan',
+            phone: '0812-3456-7890'
+        },
+        { 
+            id: 'RM-102', 
+            name: 'Bapak Sudirman', 
+            age: 58, 
+            gender: 'Laki-laki', 
+            lastVisit: '28 Juli 2026', 
+            diagnosis: 'Hipertensi Stage 2', 
+            status: 'Kontrol Rutin',
+            phone: '0813-9876-5432'
+        },
+        { 
+            id: 'RM-105', 
+            name: 'Siti Aminah', 
+            age: 32, 
+            gender: 'Perempuan', 
+            lastVisit: '15 Juni 2026', 
+            diagnosis: 'Observasi Kehamilan Trimester 2', 
+            status: 'Selesai',
+            phone: '0821-1122-3344'
+        }
+    ]);
+
+    let filteredPatients = $derived(
+        patientList.filter(p => 
+            p.name.toLowerCase().includes(patientSearchQuery.toLowerCase()) || 
+            p.id.toLowerCase().includes(patientSearchQuery.toLowerCase())
+        )
+    );
 </script>
 
 <style>
@@ -164,9 +205,10 @@
 					</div>
 				</div>
 			</div>
-
-            {#if activeMenu === 'beranda'}
-                
+            <!-- ===================== -->
+			<!-- MENU 1: BERANDA	   -->
+			<!-- ===================== -->
+            {#if activeMenu === 'beranda'}                
                 <!-- 1. STATISTIK CEPAT (Dengan Warna Performa) -->
                 <section class="mb-6 grid gap-4 sm:grid-cols-3">
                     <div class="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
@@ -446,7 +488,72 @@
 						</div>
 					</aside>
 				</div>
+            <!-- ============================== -->
+            <!-- MENU 3: DAFTAR PASIEN (DOKTER) -->
+            <!-- ============================== -->            
 			{:else if activeMenu == 'pasien'}
+                <div class="space-y-6">
+                    
+                    <!-- Header & Pencarian -->
+                    <div class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-8">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">Database Pasien</h2>
+                            <p class="mt-1 text-sm text-slate-500">Cari rekam medis dan riwayat kunjungan pasien Anda di RS Medika Sehat.</p>
+                        </div>
+                        
+                        <div class="w-full sm:w-72">
+                            <input 
+                                bind:value={patientSearchQuery} 
+                                class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" 
+                                placeholder="Cari nama atau No. RM..." 
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Daftar Kartu Pasien -->
+                    <div class="grid gap-4 md:grid-cols-2">
+                        {#each filteredPatients as patient (patient.id)}
+                            <div class="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:border-sky-300">
+                                <div>
+                                    <!-- Header Kartu -->
+                                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                        <span class="rounded-lg bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">RM: {patient.id}</span>
+                                        <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                                            {patient.status}
+                                        </span>
+                                    </div>
+
+                                    <!-- Informasi Identitas & Diagnosa -->
+                                    <div class="mt-4 space-y-2">
+                                        <div class="flex items-baseline justify-between">
+                                            <h3 class="text-lg font-bold text-slate-900">{patient.name}</h3>
+                                            <span class="text-xs font-semibold text-slate-400">{patient.gender}, {patient.age} thn</span>
+                                        </div>
+                                        
+                                        <div class="rounded-xl bg-slate-50 p-3 border border-slate-100">
+                                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Diagnosa Terakhir</p>
+                                            <p class="mt-1 text-sm font-semibold text-slate-800">{patient.diagnosis}</p>
+                                        </div>
+
+                                        <p class="flex items-center gap-2 text-xs font-medium text-slate-500 pt-1">
+                                            <span>📅</span> Kunjungan Terakhir: {patient.lastVisit} &nbsp;|&nbsp; <span>📞</span> {patient.phone}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Tombol Aksi Cepat -->
+                                <div class="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                                    <button onclick={() => activeMenu = 'beranda'} class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">Buat Resep Baru</button>
+                                    <button class="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-sky-700">Lihat Rekam Medis</button>
+                                </div>
+                            </div>
+                        {:else}
+                            <div class="col-span-full rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">
+                                Tidak ada pasien yang ditemukan dengan kata kunci tersebut.
+                            </div>
+                        {/each}
+                    </div>
+                </div>            
             {/if}
         </div>
     </main>

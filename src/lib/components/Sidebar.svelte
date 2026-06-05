@@ -24,7 +24,7 @@
         ],
         admin: [
             { id: 'beranda', label: 'Panel Admin', iconName: 'beranda' },
-            { id: 'users', label: 'Kelola Pengguna', iconName: 'users' }
+            { id: 'users', label: 'Direktori & Verifikasi Pasien', iconName: 'users' }
         ]
     };
 
