@@ -1,6 +1,7 @@
 <script lang="ts">
     import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
+	import Title from '$lib/components/Title.svelte';
 
     function readCookie(name: string) {
         if (!browser || typeof document === 'undefined') return '';
@@ -153,6 +154,10 @@
 		alert('Perubahan profil berhasil disimpan!');
 	}
 </script>
+
+<Title
+    title="Pasien | Dashboard"
+/>
 
 <div class="flex h-screen overflow-hidden bg-[#f4f7fb] font-sans text-slate-900">
     <Sidebar role="pasien" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
