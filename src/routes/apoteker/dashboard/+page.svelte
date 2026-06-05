@@ -1,6 +1,7 @@
 <script lang="ts">
     import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
+    import Title from '$lib/components/Title.svelte';
 
     type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
     
@@ -73,6 +74,10 @@
         )
     );
 </script>
+
+<Title
+    title="Apoteker | Dashboard"
+/>
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
     <Sidebar role="admin" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />

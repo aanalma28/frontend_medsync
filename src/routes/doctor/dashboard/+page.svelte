@@ -1,6 +1,7 @@
 <script lang="ts">
     import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
+    import Title from '$lib/components/Title.svelte';
 
     type DashboardUser = { role: string; name: string; id: string; };
 
@@ -152,6 +153,10 @@
         .receipt-print-card { width: 80mm; margin: 0 auto; border: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
 </style>
+
+<Title
+    title="Dokter | Dashboard"
+/>
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
     <Sidebar role="dokter" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
