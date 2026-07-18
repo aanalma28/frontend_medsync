@@ -41,6 +41,20 @@
 			quote: 'Saya suka alurnya yang rapi, terutama saat menyiapkan obat dan memverifikasi resep dengan lebih aman.',
 			rating: 4,
 			image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80'
+		},
+		{
+			name: 'Rina Azzahra',
+			role: 'Pasien',
+			quote: 'Saya sangat terbantu karena semua informasi ada di satu tempat. Tidak perlu bingung lagi mencari rincian layanan.',
+			rating: 5,
+			image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80'
+		},
+		{
+			name: 'Arif Kurniawan',
+			role: 'Staff Klinik',
+			quote: 'Alur kerja jadi lebih tertata dan cepat, terutama saat kami menyiapkan data pasien dan obat untuk pengambilan.',
+			rating: 5,
+			image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80'
 		}
 	];
 
@@ -50,11 +64,11 @@
 		{ label: 'LinkedIn', href: 'https://linkedin.com/company/medsync' }
 	];
 
-	const steps = [
-		{ title: 'Daftar akun', description: 'Buat akun sesuai peran Anda sebagai pasien, dokter, atau apoteker.' },
-		{ title: 'Lengkapi data', description: 'Masukkan kebutuhan layanan dan informasi penting yang diperlukan.' },
-		{ title: 'Mulai layanan', description: 'Nikmati alur yang lebih cepat, aman, dan terorganisir dari awal hingga selesai.' }
-	];
+	let testimonialTrack: HTMLElement | null = $state(null);
+
+	function scrollTestimonials(direction: number) {
+		testimonialTrack?.scrollBy({ left: direction * 360, behavior: 'smooth' });
+	}
 </script>
 
 <svelte:head>
@@ -165,45 +179,31 @@
 					<p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-700">Testimoni</p>
 					<h2 class="mt-2 text-3xl font-semibold text-slate-900">Apa kata pengguna MedSync?</h2>
 				</div>
-				<p class="max-w-xl text-sm leading-7 text-slate-600">Pengalaman nyata dari pasien, dokter, dan apoteker yang memanfaatkan MedSync untuk layanan kesehatan yang lebih cepat.</p>
 			</div>
-			<div class="mt-6 grid gap-6 md:grid-cols-3">
-				{#each testimonials as person}
-					<article class="rounded-[24px] border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur">
-						<div class="flex items-center gap-3">
-							<img src={person.image} alt={person.name} class="h-12 w-12 rounded-full object-cover" />
-							<div>
-								<h3 class="font-semibold text-slate-900">{person.name}</h3>
-								<p class="text-sm text-slate-500">{person.role}</p>
-							</div>
-						</div>
-						<div class="mt-4 text-lg text-amber-500">{'★'.repeat(person.rating)}{'☆'.repeat(5 - person.rating)}</div>
-						<p class="mt-3 text-sm leading-7 text-slate-600">“{person.quote}”</p>
-					</article>
-				{/each}
-			</div>
-		</section>
-
-		<section class="mt-12 rounded-[28px] border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur md:p-8">
-			<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-				<div>
-					<p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-700">Cara kerja</p>
-					<h2 class="mt-2 text-3xl font-semibold text-slate-900">Sangat simpel, cepat, dan mudah dipahami</h2>
-				</div>
-				<a href="/register" class="rounded-2xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">
-					Hubungi kami
-				</a>
-			</div>
-			<div class="mt-6 grid gap-4 md:grid-cols-3">
-				{#each steps as step, index}
-					<div class="rounded-[20px] border border-slate-200 bg-slate-50 p-5">
-						<div class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-600 text-sm font-semibold text-white">
-							{index + 1}
-						</div>
-						<h3 class="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
-						<p class="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
+			<div class="relative mt-6">
+				<button type="button" class="absolute left-0 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-lg text-slate-700 shadow-lg shadow-slate-200/60 backdrop-blur transition hover:border-sky-300 hover:text-sky-700" onclick={() => scrollTestimonials(-1)} aria-label="Testimoni sebelumnya">
+					←
+				</button>
+				<button type="button" class="absolute right-0 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-lg text-slate-700 shadow-lg shadow-slate-200/60 backdrop-blur transition hover:border-sky-300 hover:text-sky-700" onclick={() => scrollTestimonials(1)} aria-label="Testimoni berikutnya">
+					→
+				</button>
+				<div bind:this={testimonialTrack} class="overflow-x-auto pb-2 pl-12 pr-12 scrollbar-none">
+					<div class="flex min-w-max gap-6">
+						{#each testimonials as person}
+							<article class="w-[320px] rounded-[24px] border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur sm:w-[340px]">
+								<div class="flex items-center gap-3">
+									<img src={person.image} alt={person.name} class="h-12 w-12 rounded-full object-cover" />
+									<div>
+										<h3 class="font-semibold text-slate-900">{person.name}</h3>
+										<p class="text-sm text-slate-500">{person.role}</p>
+									</div>
+								</div>
+								<div class="mt-4 text-lg text-amber-500">{'★'.repeat(person.rating)}{'☆'.repeat(5 - person.rating)}</div>
+								<p class="mt-3 text-sm leading-7 text-slate-600">“{person.quote}”</p>
+							</article>
+						{/each}
 					</div>
-				{/each}
+				</div>
 			</div>
 		</section>
 
