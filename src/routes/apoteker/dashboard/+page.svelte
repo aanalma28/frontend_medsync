@@ -1,5 +1,34 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+
 	type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
+	type DashboardUser = {
+		role: string;
+		name: string;
+		id: string;
+	};
+
+	function readCookie(name: string) {
+		if (!browser || typeof document === 'undefined') return '';
+		const cookie = document.cookie
+			.split(';')
+			.map((item) => item.trim())
+			.find((item) => item.startsWith(`${name}=`));
+		if (!cookie) return '';
+		return decodeURIComponent(cookie.substring(name.length + 1));
+	}
+
+	function getSessionFromCookie() {
+		const role = readCookie('medsync_role') || readCookie('role') || 'apoteker';
+		const name = readCookie('medsync_name') || readCookie('user_name') || readCookie('name') || readCookie('full_name') || 'Apoteker';
+		const id = readCookie('medsync_user_id') || readCookie('user_id') || readCookie('id_apoteker') || '';
+		return { role, name, id };
+	}
+
+	let currentUser = $state<DashboardUser>({ role: 'apoteker', name: '', id: '' });
+	if (browser) {
+		currentUser = getSessionFromCookie();
+	}
 
 	let prescriptions = $state([
 		{
@@ -54,8 +83,31 @@
 		})
 	);
 
+	function buildPrescriptionPayload(prescription: { patient: string; doctor: string; medicines: string[]; time: string; status: PrescriptionStatus }) {
+		const apotekerId = currentUser.id || readCookie('id_apoteker') || readCookie('medsync_apoteker_id') || '';
+		return {
+			pasien: prescription.patient,
+			dokter: prescription.doctor,
+			detail_obat: prescription.medicines,
+			waktu_pengambilan: prescription.time,
+			status: prescription.status,
+			id_apoteker: apotekerId,
+			catatan_verifikasi: verifyNote || ''
+		};
+	}
+
+	function submitPrescriptionRecord(prescription: { patient: string; doctor: string; medicines: string[]; time: string; status: PrescriptionStatus }) {
+		const payload = buildPrescriptionPayload(prescription);
+		console.log('Payload resep_dokter siap dikirim:', payload);
+		return payload;
+	}
+
 	function updateStatus(id: number, status: PrescriptionStatus) {
 		prescriptions = prescriptions.map((item) => (item.id === id ? { ...item, status } : item));
+		const selected = prescriptions.find((item) => item.id === id);
+		if (selected) {
+			submitPrescriptionRecord(selected);
+		}
 	}
 
 	function toggleVerification(id: number) {
@@ -81,6 +133,15 @@
 				</div>
 				<div class="rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 text-sm text-amber-50 sm:px-4 sm:py-3">
 					<span class="font-semibold">Shift siang</span> • 10:00 WIB • Apotek Medika Sehat
+				</div>
+			</div>
+			<div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+				<div class="text-sm font-semibold text-amber-50">
+					Selamat datang, {currentUser.name || 'Apoteker'}
+				</div>
+				<div class="flex flex-wrap items-center gap-2 text-sm text-amber-100">
+					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">Login sebagai {currentUser.name || 'Apoteker'}</span>
+					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">{currentUser.id ? `ID: ${currentUser.id}` : 'ID belum tersedia'}</span>
 				</div>
 			</div>
 		</header>
@@ -145,7 +206,7 @@
 							<div class="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
 								<p class="text-sm font-semibold text-slate-900">Daftar obat</p>
 								<div class="mt-2 flex flex-wrap gap-2">
-									{#each prescription.medicines as medicine}
+									{#each prescription.medicines as medicine, index (index)}
 										<span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">{medicine}</span>
 									{/each}
 								</div>
@@ -175,7 +236,7 @@
 					</div>
 
 					<div class="mt-4 space-y-2">
-						{#each inventory as item}
+						{#each inventory as item (item.name)}
 							<div class={`rounded-2xl border p-3 ${item.quantity < 10 ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
 								<div class="flex items-start justify-between gap-3">
 									<div>
@@ -196,7 +257,7 @@
 					<p class="text-sm font-semibold text-amber-300">Pengambilan obat</p>
 					<h3 class="mt-1 text-lg font-semibold">Jadwal hari ini</h3>
 					<div class="mt-4 space-y-2">
-						{#each pickupQueue as item}
+						{#each pickupQueue as item (item.patient)}
 							<div class="rounded-2xl border border-white/10 bg-white/10 p-3 text-sm">
 								<p class="font-semibold">{item.patient}</p>
 								<p class="mt-1 text-slate-300">{item.medicine}</p>

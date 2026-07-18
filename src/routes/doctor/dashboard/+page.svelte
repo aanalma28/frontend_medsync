@@ -1,4 +1,34 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+
+	type DashboardUser = {
+		role: string;
+		name: string;
+		id: string;
+	};
+
+	function readCookie(name: string) {
+		if (!browser || typeof document === 'undefined') return '';
+		const cookie = document.cookie
+			.split(';')
+			.map((item) => item.trim())
+			.find((item) => item.startsWith(`${name}=`));
+		if (!cookie) return '';
+		return decodeURIComponent(cookie.substring(name.length + 1));
+	}
+
+	function getSessionFromCookie() {
+		const role = readCookie('medsync_role') || readCookie('role') || 'dokter';
+		const name = readCookie('medsync_name') || readCookie('user_name') || readCookie('name') || readCookie('full_name') || 'Dokter';
+		const id = readCookie('medsync_user_id') || readCookie('user_id') || readCookie('id_dokter') || '';
+		return { role, name, id };
+	}
+
+	let currentUser = $state<DashboardUser>({ role: 'dokter', name: '', id: '' });
+	if (browser) {
+		currentUser = getSessionFromCookie();
+	}
+
 	let selectedPatient = $state('Ayu Putri');
 	let diagnosis = $state('Demam dan batuk ringan');
 	let searchQuery = $state('');
@@ -186,6 +216,15 @@
 				</div>
 				<div class="rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 text-sm text-sky-50 sm:px-4 sm:py-3">
 					<span class="font-semibold">Hari ini</span> • 08:30 WIB • RS Medika Sehat
+				</div>
+			</div>
+			<div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+				<div class="text-sm font-semibold text-sky-50">
+					Halo, {currentUser.name || 'Dokter'}
+				</div>
+				<div class="flex flex-wrap items-center gap-2 text-sm text-sky-100">
+					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">Login sebagai {currentUser.name || 'Dokter'}</span>
+					<span class="rounded-full border border-white/20 bg-white/10 px-3 py-1">{currentUser.id ? `ID: ${currentUser.id}` : 'ID belum tersedia'}</span>
 				</div>
 			</div>
 		</header>
