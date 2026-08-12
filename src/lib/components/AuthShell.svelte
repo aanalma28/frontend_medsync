@@ -25,9 +25,9 @@
     let selectedRole = $state('pasien');
     let userInputs = $state({
         fullName: '',
-        patientId: '',
-        doctorId: '',
-        staffCode: '',
+        phone: '',
+        birthDate: '',
+        address: '',
         email: '',
         password: '',
         confirmPassword: '',
@@ -40,17 +40,19 @@
     let isPasswordFocused = $state(false); // Untuk trigger dropdown aturan password
 
     // 2. Real-time Validation Logic (Menggunakan $derived Svelte 5)
-    let isRoleValid = $derived(['pasien', 'dokter', 'admin'].includes(selectedRole));
     let isNameValid = $derived(userInputs.fullName.length >= 3 && userInputs.fullName.length <= 100);
-    
-    // Menentukan user_code yang aktif berdasarkan role
-    let activeUserCode = $derived(
-        selectedRole === 'pasien' ? userInputs.patientId : 
-        selectedRole === 'dokter' ? userInputs.doctorId : 
-        userInputs.staffCode
-    );
-    let isCodeValid = $derived(activeUserCode.length >= 3 && activeUserCode.length <= 50);
-    
+    let isPhoneValid = $derived(/^(\+62|62|08)[0-9]{8,13}$/.test(userInputs.phone.replace(/[\s-]/g, '')));
+    let isBirthDateValid = $derived(() => {
+        if (!userInputs.birthDate) return false;
+        const birth = new Date(userInputs.birthDate);
+        if (isNaN(birth.getTime())) return false;
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+        return age >= 1 && age <= 120;
+    });
+    let isAddressValid = $derived(userInputs.address.length >= 10 && userInputs.address.length <= 255);
     let isEmailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userInputs.email) && userInputs.email.length <= 100);
     
     // Pecahan validasi password
@@ -63,14 +65,13 @@
     let isConfirmValid = $derived(userInputs.confirmPassword === userInputs.password && userInputs.password.length > 0);
     let isTermsValid = $derived(userInputs.termsAccepted === true);
 
-    // Kunci utama: Apakah form valid untuk di-submit?
-    let isFormValid = $derived(isRoleValid && isNameValid && isCodeValid && isEmailValid && isPasswordValid && isConfirmValid && isTermsValid);
-
-    function roleHint(role: string) {
-        if (role === 'dokter') return 'Akses panel dokter, jadwal praktik, dan riwayat pasien.';
-        if (role === 'admin') return 'Akses pengelolaan pengguna, klinik, dan pengaturan sistem.';
-        return 'Akses janji temu, hasil pemeriksaan, dan informasi kesehatan Anda.';
+    // Mendapatkan tanggal maksimum (hari ini) untuk input tanggal lahir
+    function getTodayDate(): string {
+        return new Date().toISOString().split('T')[0];
     }
+
+    // Kunci utama: Apakah form valid untuk di-submit?
+    let isFormValid = $derived(isNameValid && isPhoneValid && isBirthDateValid() && isAddressValid && isEmailValid && isPasswordValid && isConfirmValid && isTermsValid);
 
     // 3. Modifikasi fungsi handleSubmit untuk menangkap event dan error
     async function handleSubmit(event: Event) {
@@ -88,10 +89,12 @@
                 }
 
                 RegisterData.set({
-                    role: selectedRole,
+                    role: 'pasien',
                     name: userInputs.fullName,
-                    user_code: activeUserCode,
                     email: userInputs.email,
+                    phone: userInputs.phone,
+                    address: userInputs.address,
+                    birth_date: userInputs.birthDate,
                     password: userInputs.password,
                     confirm_password: userInputs.confirmPassword,
                     accepted_terms: userInputs.termsAccepted
@@ -227,45 +230,54 @@
 
                 <!-- Menambahkan onsubmit pada tag form -->
                 <form class="mt-8 space-y-4" onsubmit={handleSubmit}>
-                    <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-3">
-                        <label class="block text-sm font-medium text-slate-700">
-                            <span class="mb-2 block">Pilih role akun</span>
-                            <select bind:value={selectedRole} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
-                                <option value="pasien">Pasien</option>
-                                <option value="dokter">Dokter</option>
-                                <option value="admin">Admin / Staff</option>
-                            </select>
-                        </label>
-                        <p class="mt-2 text-xs leading-5 text-slate-600">{roleHint(selectedRole)}</p>
-                    </div>
+                    {#if !isRegister}
+                        <div class="rounded-2xl border border-sky-100 bg-sky-50/80 p-3">
+                            <label class="block text-sm font-medium text-slate-700">
+                                <span class="mb-2 block">Pilih role akun</span>
+                                <select bind:value={selectedRole} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                                    <option value="pasien">Pasien</option>
+                                    <option value="dokter">Dokter</option>
+                                    <option value="admin">Admin / Staff</option>
+                                </select>
+                            </label>
+                            <p class="mt-2 text-xs leading-5 text-slate-600">Akses janji temu, hasil pemeriksaan, dan informasi kesehatan Anda.</p>
+                        </div>
+                    {/if}
 
                     {#if isRegister}
+                        <label class="block text-sm font-medium text-slate-700 relative">
+                            <span class="mb-2 block">Nama lengkap</span>
+                            <input bind:value={userInputs.fullName} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Ayu Putri Rahayu" />
+                            {#if userInputs.fullName.length > 0}
+                                <span class="absolute right-3 top-10 text-sm">{isNameValid ? '✅' : '❌'}</span>
+                            {/if}
+                        </label>
+
                         <div class="grid gap-4 sm:grid-cols-2">
                             <label class="block text-sm font-medium text-slate-700 relative">
-                                <span class="mb-2 block">Nama lengkap</span>
-                                <input bind:value={userInputs.fullName} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Dr. Aulia Rahman" />
-                                {#if userInputs.fullName.length > 0}
-                                    <span class="absolute right-3 top-10 text-sm">{isNameValid ? '✅' : '❌'}</span>
+                                <span class="mb-2 block">Nomor handphone</span>
+                                <input bind:value={userInputs.phone} type="tel" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="0812-3456-7890" />
+                                {#if userInputs.phone.length > 0}
+                                    <span class="absolute right-3 top-10 text-sm">{isPhoneValid ? '✅' : '❌'}</span>
                                 {/if}
                             </label>
 
-                            <!-- Kode Pasien / Dokter / Staff -->
                             <label class="block text-sm font-medium text-slate-700 relative">
-                                <span class="mb-2 block">
-                                    {selectedRole === 'pasien' ? 'Nomor pasien' : selectedRole === 'dokter' ? 'ID dokter' : 'Kode staff'}
-                                </span>
-                                {#if selectedRole === 'pasien'}
-                                    <input bind:value={userInputs.patientId} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="BP-2054" />
-                                {:else if selectedRole === 'dokter'}
-                                    <input bind:value={userInputs.doctorId} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="DOC-001" />
-                                {:else}
-                                    <input bind:value={userInputs.staffCode} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="ADM-001" />
-                                {/if}
-                                {#if activeUserCode.length > 0}
-                                    <span class="absolute right-3 top-10 text-sm">{isCodeValid ? '✅' : '❌'}</span>
+                                <span class="mb-2 block">Tanggal lahir</span>
+                                <input bind:value={userInputs.birthDate} type="date" max={getTodayDate()} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" />
+                                {#if userInputs.birthDate.length > 0}
+                                    <span class="absolute right-3 top-10 text-sm">{isBirthDateValid() ? '✅' : '❌'}</span>
                                 {/if}
                             </label>
                         </div>
+
+                        <label class="block text-sm font-medium text-slate-700 relative">
+                            <span class="mb-2 block">Alamat tempat tinggal</span>
+                            <textarea bind:value={userInputs.address} rows="2" class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Jl. Pemuda No. 45, Kudus, Jawa Tengah"></textarea>
+                            {#if userInputs.address.length > 0}
+                                <span class="absolute right-3 top-10 text-sm">{isAddressValid ? '✅' : '❌'}</span>
+                            {/if}
+                        </label>
                     {/if}
 
                     <label class="block text-sm font-medium text-slate-700 relative">
@@ -328,8 +340,14 @@
                                 <li class="flex items-center gap-2 {isNameValid ? 'text-green-600' : 'text-slate-500'}">
                                     <span>{isNameValid ? '✅' : '❌'}</span> Nama terisi dengan benar (3-100 karakter)
                                 </li>
-                                <li class="flex items-center gap-2 {isCodeValid ? 'text-green-600' : 'text-slate-500'}">
-                                    <span>{isCodeValid ? '✅' : '❌'}</span> Nomor/ID terisi dengan benar (3-50 karakter)
+                                <li class="flex items-center gap-2 {isPhoneValid ? 'text-green-600' : 'text-slate-500'}">
+                                    <span>{isPhoneValid ? '✅' : '❌'}</span> Nomor handphone valid (format Indonesia)
+                                </li>
+                                <li class="flex items-center gap-2 {isBirthDateValid() ? 'text-green-600' : 'text-slate-500'}">
+                                    <span>{isBirthDateValid() ? '✅' : '❌'}</span> Tanggal lahir valid (usia 1-120 tahun)
+                                </li>
+                                <li class="flex items-center gap-2 {isAddressValid ? 'text-green-600' : 'text-slate-500'}">
+                                    <span>{isAddressValid ? '✅' : '❌'}</span> Alamat terisi dengan benar (min. 10 karakter)
                                 </li>
                                 <li class="flex items-center gap-2 {isEmailValid ? 'text-green-600' : 'text-slate-500'}">
                                     <span>{isEmailValid ? '✅' : '❌'}</span> Format email valid

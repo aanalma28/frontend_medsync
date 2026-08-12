@@ -10,8 +10,10 @@ export interface Login {
 export interface Register {
     role: string;
     name: string;
-    user_code: string;
     email: string;
+    phone: string;
+    address: string;
+    birth_date: string;
     password: string;
     confirm_password: string;
     accepted_terms: boolean;
@@ -28,8 +30,10 @@ export const LoginData = writable<Login>({
 export const RegisterData = writable<Register>({
     role: 'pasien',
     name: '',
-    user_code: '',
     email: '',
+    phone: '',
+    address: '',
+    birth_date: '',
     password: '',
     confirm_password: '',
     accepted_terms: false

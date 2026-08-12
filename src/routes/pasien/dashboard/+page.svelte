@@ -56,23 +56,164 @@
 	let isEditingAppt = $state(false);
 	let editApptId = $state<number | null>(null);
 	let apptForm = $state({
-		poli: 'Penyakit Dalam',
+		poli: '',
 		doctor: '',
+		doctor_id: '',
 		date: '',
 		time: ''
 	});
 
+	// State untuk fetch dokter berdasarkan poli + tanggal
+	let availableDoctors = $state<any[]>([]);
+	let isLoadingDoctors = $state(false);
+	let doctorFetchError = $state('');
+
+	// State untuk fetch jadwal praktek dokter di tanggal terpilih
+	let doctorSchedule = $state<any[]>([]);
+	let isLoadingSchedule = $state(false);
+	let scheduleFetchError = $state('');
+	let selectedDoctorName = $state('');
+
+	// Daftar poliklinik yang tersedia
+	const poliOptions = [
+		'Penyakit Dalam',
+		'Poliklinik Anak',
+		'Gigi dan Mulut',
+		'Kardiologi (Jantung)',
+		'Mata',
+		'THT (Telinga Hidung Tenggorokan)',
+		'Kulit dan Kelamin',
+		'Saraf (Neurologi)',
+		'Bedah Umum',
+		'Kebidanan dan Kandungan'
+	];
+
+	// Fetch dokter ketika poli DAN tanggal sudah dipilih
+	async function fetchDoctorsByPoliAndDate() {
+		if (!apptForm.poli || !apptForm.date) return;
+
+		// Reset state terkait
+		availableDoctors = [];
+		doctorSchedule = [];
+		apptForm.doctor = '';
+		apptForm.doctor_id = '';
+		apptForm.time = '';
+		selectedDoctorName = '';
+		isLoadingDoctors = true;
+		doctorFetchError = '';
+
+		try {
+			const response = await fetch(
+				`${import.meta.env.VITE_API_URL}/appointments/doctors?poli=${encodeURIComponent(apptForm.poli)}&date=${apptForm.date}`,
+				{
+					method: 'GET',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include'
+				}
+			);
+
+			if (response.ok) {
+				const data = await response.json();
+				availableDoctors = data.data || data || [];
+			} else {
+				doctorFetchError = 'Gagal memuat daftar dokter. Silakan coba lagi.';
+			}
+		} catch {
+			doctorFetchError = 'Tidak dapat terhubung ke server.';
+		} finally {
+			isLoadingDoctors = false;
+		}
+	}
+
+	// Fetch jadwal praktek dokter di tanggal terpilih
+	async function fetchDoctorSchedule(doctorId: string, doctorName: string) {
+		apptForm.doctor = doctorName;
+		apptForm.doctor_id = doctorId;
+		apptForm.time = '';
+		selectedDoctorName = doctorName;
+		isLoadingSchedule = true;
+		scheduleFetchError = '';
+		doctorSchedule = [];
+
+		try {
+			const response = await fetch(
+				`${import.meta.env.VITE_API_URL}/appointments/schedule?doctor_id=${doctorId}&date=${apptForm.date}`,
+				{
+					method: 'GET',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include'
+				}
+			);
+
+			if (response.ok) {
+				const data = await response.json();
+				doctorSchedule = data.data || data || [];
+			} else {
+				scheduleFetchError = 'Gagal memuat jadwal dokter.';
+			}
+		} catch {
+			scheduleFetchError = 'Tidak dapat terhubung ke server.';
+		} finally {
+			isLoadingSchedule = false;
+		}
+	}
+
+	// Handler ketika poli berubah
+	function onPoliChange() {
+		apptForm.doctor = '';
+		apptForm.doctor_id = '';
+		apptForm.time = '';
+		availableDoctors = [];
+		doctorSchedule = [];
+		selectedDoctorName = '';
+		if (apptForm.date) fetchDoctorsByPoliAndDate();
+	}
+
+	// Handler ketika tanggal berubah
+	function onDateChange() {
+		apptForm.doctor = '';
+		apptForm.doctor_id = '';
+		apptForm.time = '';
+		availableDoctors = [];
+		doctorSchedule = [];
+		selectedDoctorName = '';
+		if (apptForm.poli) fetchDoctorsByPoliAndDate();
+	}
+
+	// Pilih slot waktu dari jadwal
+	function selectTimeSlot(time: string) {
+		apptForm.time = time;
+	}
+
+	// Cek apakah form valid untuk submit
+	let isApptFormValid = $derived(
+		apptForm.poli !== '' && 
+		apptForm.doctor !== '' && 
+		apptForm.date !== '' && 
+		apptForm.time !== ''
+	);
+
 	function openAddApptModal() {
 		isEditingAppt = false;
 		editApptId = null;
-		apptForm = { poli: 'Penyakit Dalam', doctor: '', date: '', time: '' };
+		apptForm = { poli: '', doctor: '', doctor_id: '', date: '', time: '' };
+		availableDoctors = [];
+		doctorSchedule = [];
+		selectedDoctorName = '';
+		doctorFetchError = '';
+		scheduleFetchError = '';
 		showApptModal = true;
 	}
 
 	function openEditApptModal(item: any) {
 		isEditingAppt = true;
 		editApptId = item.id;
-		apptForm = { poli: item.poli, doctor: item.doctor, date: item.date, time: item.time };
+		apptForm = { poli: item.poli, doctor: item.doctor, doctor_id: item.doctor_id || '', date: item.date, time: item.time };
+		availableDoctors = [];
+		doctorSchedule = [];
+		selectedDoctorName = item.doctor;
+		doctorFetchError = '';
+		scheduleFetchError = '';
 		showApptModal = true;
 	}
 
@@ -84,6 +225,8 @@
 
 	function saveAppointment(e: Event) {
 		e.preventDefault();
+		if (!isApptFormValid) return;
+		
 		if (isEditingAppt && editApptId !== null) {
 			appointments = appointments.map(a => a.id === editApptId ? { ...a, ...apptForm } : a);
 		} else {
@@ -91,12 +234,18 @@
 			appointments = [...appointments, {
 				id: newId,
 				code: `JK-2026-00${newId}`,
-				status: 'Terjadwal',
+				status: 'Menunggu Konfirmasi',
 				location: 'Gedung Utama, Lantai 2',
 				...apptForm
 			}];
 		}
 		showApptModal = false;
+	}
+
+	// Mendapatkan tanggal minimum (hari ini)
+	function getTodayDate(): string {
+		const today = new Date();
+		return today.toISOString().split('T')[0];
 	}
 	// --- STATE MENU RESEP OBAT (PASIEN) ---
 	let activePrescriptions = $state([
@@ -330,50 +479,243 @@
 					</div>
 				</div>
 
-				<!-- MODAL FORM CRUD JANJI TEMU PASIEN -->
+				<!-- MODAL FORM CRUD JANJI TEMU PASIEN (REVISED FLOW) -->
 				{#if showApptModal}
-					<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-						<div class="w-full max-w-md rounded-[28px] bg-white p-7 shadow-2xl">
-							<h2 class="mb-2 text-xl font-bold text-slate-900">{isEditingAppt ? 'Ubah Jadwal Konsultasi' : 'Buat Janji Temu Baru'}</h2>
-							<p class="mb-5 text-xs text-slate-500">Pilih poliklinik dan dokter yang ingin Anda tuju.</p>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onkeydown={(e) => e.key === 'Escape' && (showApptModal = false)}>
+						<div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] bg-white p-7 shadow-2xl sm:p-8">
 							
-							<form onsubmit={saveAppointment} class="space-y-4">
-								<label class="block">
-									<span class="mb-1.5 block text-sm font-bold text-slate-700">Pilih Poliklinik</span>
-									<select bind:value={apptForm.poli} class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100">
-										<option value="Penyakit Dalam">Penyakit Dalam</option>
-										<option value="Poliklinik Anak">Poliklinik Anak</option>
-										<option value="Gigi dan Mulut">Gigi dan Mulut</option>
-										<option value="Kardiologi (Jantung)">Kardiologi (Jantung)</option>
-									</select>
-								</label>
+							<!-- Header Modal -->
+							<div class="mb-6 border-b border-slate-100 pb-5">
+								<h2 class="text-xl font-bold text-slate-900">{isEditingAppt ? 'Ubah Jadwal Konsultasi' : 'Buat Janji Temu Baru'}</h2>
+								<p class="mt-1 text-sm text-slate-500">Pilih poliklinik dan tanggal terlebih dahulu untuk melihat dokter yang tersedia.</p>
+							</div>
+							
+							<form onsubmit={saveAppointment} class="space-y-6">
 								
-								<label class="block">
-									<span class="mb-1.5 block text-sm font-bold text-slate-700">Nama Dokter Spesialis</span>
-									<input type="text" bind:value={apptForm.doctor} required placeholder="Contoh: dr. Nanda Putri, Sp.A" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" />
-								</label>
+								<!-- STEP 1: Pilih Poliklinik & Tanggal -->
+								<div class="rounded-2xl border border-sky-100 bg-sky-50/40 p-5">
+									<div class="mb-4 flex items-center gap-2">
+										<div class="flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-black text-white">1</div>
+										<h3 class="text-sm font-bold text-slate-800">Pilih Poliklinik & Tanggal Kunjungan</h3>
+									</div>
+									
+									<div class="grid gap-4 sm:grid-cols-2">
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">Departemen / Poliklinik</span>
+											<select 
+												bind:value={apptForm.poli} 
+												onchange={onPoliChange}
+												class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+											>
+												<option value="">— Pilih Poliklinik —</option>
+												{#each poliOptions as poli}
+													<option value={poli}>{poli}</option>
+												{/each}
+											</select>
+										</label>
 
-								<div class="grid grid-cols-2 gap-4">
-									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700">Tanggal Kunjungan</span>
-										<input type="date" bind:value={apptForm.date} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" />
-									</label>
-									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700">Estimasi Jam</span>
-										<input type="time" bind:value={apptForm.time} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" />
-									</label>
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">Tanggal Kunjungan</span>
+											<input 
+												type="date" 
+												bind:value={apptForm.date} 
+												onchange={onDateChange}
+												min={getTodayDate()}
+												class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" 
+											/>
+										</label>
+									</div>
+
+									{#if !apptForm.poli || !apptForm.date}
+										<p class="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+											<span>⚠️</span> Lengkapi poliklinik dan tanggal untuk melihat dokter yang tersedia.
+										</p>
+									{/if}
 								</div>
 
-								<div class="mt-8 flex justify-end gap-3 border-t border-slate-100 pt-4">
-									<button type="button" onclick={() => showApptModal = false} class="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100">Batal</button>
-									<button type="submit" class="rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:opacity-90">
-										{isEditingAppt ? 'Simpan Perubahan' : 'Konfirmasi Janji'}
+								<!-- STEP 2: Pilih Dokter (muncul setelah poli + tanggal dipilih) -->
+								{#if apptForm.poli && apptForm.date}
+									<div class="rounded-2xl border border-slate-200 bg-white p-5">
+										<div class="mb-4 flex items-center gap-2">
+											<div class="flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-black text-white">2</div>
+											<h3 class="text-sm font-bold text-slate-800">Pilih Dokter yang Praktek</h3>
+										</div>
+
+										{#if isLoadingDoctors}
+											<!-- Loading State -->
+											<div class="flex flex-col items-center justify-center py-8">
+												<div class="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"></div>
+												<p class="text-sm font-medium text-slate-500">Memuat daftar dokter...</p>
+											</div>
+										{:else if doctorFetchError}
+											<!-- Error State -->
+											<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-center">
+												<p class="text-sm font-bold text-rose-600">❌ {doctorFetchError}</p>
+												<button 
+													type="button" 
+													onclick={fetchDoctorsByPoliAndDate} 
+													class="mt-2 rounded-lg bg-rose-100 px-4 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-200"
+												>
+													Coba Lagi
+												</button>
+											</div>
+										{:else if availableDoctors.length === 0}
+											<!-- Empty State -->
+											<div class="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+												<p class="text-2xl">🏥</p>
+												<p class="mt-2 text-sm font-bold text-slate-500">Tidak ada dokter yang praktek</p>
+												<p class="text-xs text-slate-400">Coba ubah poliklinik atau pilih tanggal lain.</p>
+											</div>
+										{:else}
+											<!-- Daftar Kartu Dokter -->
+											<div class="grid gap-3 sm:grid-cols-2">
+												{#each availableDoctors as doc}
+													<button 
+														type="button"
+														onclick={() => fetchDoctorSchedule(doc.id, doc.name)}
+														class="group flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-all {apptForm.doctor_id === doc.id ? 'border-sky-500 bg-sky-50 shadow-md shadow-sky-100' : 'border-slate-200 bg-white hover:border-sky-300 hover:shadow-sm'}"
+													>
+														<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full {apptForm.doctor_id === doc.id ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-sky-100 group-hover:text-sky-600'}">
+															<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+															</svg>
+														</div>
+														<div class="flex-1 min-w-0">
+															<p class="text-sm font-bold text-slate-900 truncate">{doc.name}</p>
+															{#if doc.specialization}
+																<p class="text-xs font-medium text-sky-600">{doc.specialization}</p>
+															{/if}
+															{#if doc.practice_hours}
+																<p class="mt-1 text-[11px] text-slate-400">🕐 {doc.practice_hours}</p>
+															{/if}
+															{#if apptForm.doctor_id === doc.id}
+																<span class="mt-1.5 inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white">
+																	✓ Dipilih
+																</span>
+															{/if}
+														</div>
+													</button>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{/if}
+
+								<!-- STEP 3: Lihat Jadwal & Pilih Waktu (muncul setelah dokter dipilih) -->
+								{#if apptForm.doctor}
+									<div class="rounded-2xl border border-emerald-100 bg-emerald-50/30 p-5">
+										<div class="mb-4 flex items-center gap-2">
+											<div class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white">3</div>
+											<h3 class="text-sm font-bold text-slate-800">Jadwal Praktek & Pilih Jam</h3>
+										</div>
+
+										<div class="mb-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+											<p class="text-xs font-medium text-sky-700">
+												📋 Jadwal <strong>{selectedDoctorName}</strong> pada tanggal <strong>{apptForm.date}</strong>
+											</p>
+										</div>
+
+										{#if isLoadingSchedule}
+											<div class="flex items-center justify-center gap-2 py-6">
+												<div class="h-5 w-5 animate-spin rounded-full border-[3px] border-emerald-200 border-t-emerald-600"></div>
+												<p class="text-sm font-medium text-slate-500">Memuat jadwal...</p>
+											</div>
+										{:else if scheduleFetchError}
+											<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-center">
+												<p class="text-sm font-bold text-rose-600">❌ {scheduleFetchError}</p>
+											</div>
+										{:else if doctorSchedule.length > 0}
+											<!-- Grid Slot Waktu -->
+											<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
+												{#each doctorSchedule as slot}
+													<button
+														type="button"
+														onclick={() => selectTimeSlot(slot.time)}
+														disabled={slot.is_booked}
+														class="rounded-xl border-2 px-3 py-2.5 text-center text-sm font-bold transition-all
+															{slot.is_booked 
+																? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 line-through' 
+																: apptForm.time === slot.time 
+																	? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md shadow-emerald-100' 
+																	: 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:bg-emerald-50'}"
+													>
+														{slot.time}
+														{#if slot.is_booked}
+															<span class="block text-[9px] font-medium text-slate-400 no-underline" style="text-decoration: none;">Terisi</span>
+														{:else if slot.patient_count !== undefined}
+															<span class="block text-[9px] font-medium text-emerald-500">{slot.patient_count} pasien</span>
+														{/if}
+													</button>
+												{/each}
+											</div>
+
+											<!-- Legenda -->
+											<div class="mt-3 flex items-center gap-4 text-[10px] text-slate-400">
+												<span class="flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded border border-slate-200 bg-white"></span> Tersedia</span>
+												<span class="flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded border border-emerald-500 bg-emerald-50"></span> Dipilih</span>
+												<span class="flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded border border-slate-200 bg-slate-100"></span> Penuh</span>
+											</div>
+										{:else}
+											<!-- Fallback: input manual jika API jadwal belum tersedia -->
+											<div class="space-y-3">
+												<p class="text-xs text-slate-500">Data slot jadwal belum tersedia. Silakan pilih jam secara manual:</p>
+												<label class="block">
+													<span class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">Estimasi Jam Kunjungan</span>
+													<input 
+														type="time" 
+														bind:value={apptForm.time} 
+														class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" 
+													/>
+												</label>
+											</div>
+										{/if}
+									</div>
+								{/if}
+
+								<!-- SUMMARY / KONFIRMASI (muncul jika semua sudah dipilih) -->
+								{#if isApptFormValid}
+									<div class="rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-5">
+										<div class="mb-3 flex items-center gap-2">
+											<span class="text-lg">✅</span>
+											<h3 class="text-sm font-bold text-emerald-800">Ringkasan Janji Temu</h3>
+										</div>
+										<div class="grid gap-2 text-sm sm:grid-cols-2">
+											<div class="rounded-lg bg-white/80 p-3">
+												<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Poliklinik</p>
+												<p class="font-bold text-slate-900">{apptForm.poli}</p>
+											</div>
+											<div class="rounded-lg bg-white/80 p-3">
+												<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dokter</p>
+												<p class="font-bold text-slate-900">{apptForm.doctor}</p>
+											</div>
+											<div class="rounded-lg bg-white/80 p-3">
+												<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tanggal</p>
+												<p class="font-bold text-slate-900">📅 {apptForm.date}</p>
+											</div>
+											<div class="rounded-lg bg-white/80 p-3">
+												<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Jam</p>
+												<p class="font-bold text-slate-900">⏰ {apptForm.time} WIB</p>
+											</div>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Tombol Aksi -->
+								<div class="flex justify-end gap-3 border-t border-slate-100 pt-5">
+									<button type="button" onclick={() => showApptModal = false} class="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 transition hover:bg-slate-100">Batal</button>
+									<button 
+										type="submit" 
+										disabled={!isApptFormValid}
+										class="rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+									>
+										{isEditingAppt ? 'Simpan Perubahan' : 'Konfirmasi Janji Temu'}
 									</button>
 								</div>
 							</form>
 						</div>
 					</div>
-				{/if}			
+				{/if}						
 			<!-- ===================== -->
 			<!-- MENU 3: RESEP OBAT (PASIEN) -->
 			<!-- ===================== -->			
