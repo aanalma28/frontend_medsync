@@ -133,7 +133,7 @@
                 });
 
                 if(response.ok){
-                    alert('Login berhasil! Mengalihkan ke dashboard.');					
+                    alert('Login berhasil! Mengalihkan ke dashboard.');                    			
                     window.location.href = selectedRole == "pasien" ? '/pasien/dashboard' : selectedRole == "dokter" ? 'doctor/dashboard' : selectedRole == "apoteker" ? 'apoteker/dashboard' : '/login'
                 } else {
                     const errorData = await response.json();

@@ -2,6 +2,14 @@
     import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import { onMount } from 'svelte';
+    import { getProfile } from '$lib/utils/getProfile';
+
+	onMount(() => {
+        getProfile().then((profile) => {
+            currentUser = profile;
+        });
+    })
 
     function readCookie(name: string) {
         if (!browser || typeof document === 'undefined') return '';
