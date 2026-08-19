@@ -266,7 +266,7 @@
                                 <span class="mb-2 block">Tanggal lahir</span>
                                 <input bind:value={userInputs.birthDate} type="date" max={getTodayDate()} class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100" />
                                 {#if userInputs.birthDate.length > 0}
-                                    <span class="absolute right-3 top-10 text-sm">{isBirthDateValid() ? '✅' : '❌'}</span>
+                                    <span class="absolute right-10 top-10 text-sm">{isBirthDateValid() ? '✅' : '❌'}</span>
                                 {/if}
                             </label>
                         </div>
