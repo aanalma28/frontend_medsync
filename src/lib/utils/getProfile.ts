@@ -9,6 +9,8 @@ export const getProfile = async () => {
         return { role: data.role, name: data.name, id: data.id };
     } catch (error) {
         console.error('Error fetching profile:', error);
+        alert('Terjadi kesalahan saat mengambil profil. Silakan coba lagi.');
+        window.location.href = '/login'; // Redirect to login page if an error occurs
         throw error;
     }
 };

@@ -4,12 +4,17 @@
     import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
     import { getProfile } from '$lib/utils/getProfile';
+    import DashboardSkeletonApoteker from '$lib/components/skeleton/DashboardSkeletonApoteker.svelte';
+    import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 
     type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
+
+    let isLoading = $state(true);
 
     onMount(() => {        
         getProfile().then((profile) => {
             currentUser = profile;
+            isLoading = false;
         });
     })
     
@@ -88,7 +93,11 @@
 />
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
-    <Sidebar role="admin" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
+    {#if isLoading}
+        <SidebarSkeleton />
+    {:else}
+        <Sidebar role="admin" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
+    {/if}
 
     <main class="flex-1 flex flex-col h-full overflow-hidden">
         <header class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden">
@@ -98,6 +107,10 @@
         </header>
 
         <div class="flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10">
+            
+            {#if isLoading}
+                <DashboardSkeletonApoteker />
+            {:else}
             
             <!-- HEADER HERO APOTEKER -->
             <div class="mb-8 relative overflow-hidden rounded-[24px] bg-gradient-to-br from-slate-900 via-stone-900 to-amber-900 p-6 text-white shadow-xl sm:p-8">
@@ -295,6 +308,7 @@
                         </div>
                     </div>
                 </div>            
+            {/if}
             {/if}
         </div>
     </main>

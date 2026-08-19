@@ -4,12 +4,17 @@
     import Title from '$lib/components/Title.svelte';
     import { onMount } from 'svelte';
     import { getProfile } from '$lib/utils/getProfile';
+    import DashboardSkeletonDokter from '$lib/components/skeleton/DashboardSkeletonDokter.svelte';
+    import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 
     type DashboardUser = { role: string; name: string; id: string; };
+
+    let isLoading = $state(true);
 
     onMount(() => {
         getProfile().then((profile) => {
             currentUser = profile;
+            isLoading = false;
         });
     })
 
@@ -167,7 +172,11 @@
 />
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
-    <Sidebar role="dokter" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
+    {#if isLoading}
+        <SidebarSkeleton />
+    {:else}
+        <Sidebar role="dokter" activeMenu={activeMenu} isOpen={isSidebarOpen} onMenuSelect={(m) => activeMenu = m} onClose={() => isSidebarOpen = false} />
+    {/if}
 
     <main class="flex-1 flex flex-col h-full overflow-hidden">
         <!-- Header Mobile -->
@@ -180,6 +189,9 @@
         </header>
 
         <div class="flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10">
+            {#if isLoading}
+                <DashboardSkeletonDokter />
+            {:else}
             <!-- HIGHLIGHT BANNER: PANEL DOKTER -->
 			<div class="mb-8 relative overflow-hidden rounded-[24px] bg-gradient-to-br from-slate-900 via-indigo-950 to-sky-900 p-6 text-white shadow-xl sm:p-8">
 				<!-- Efek Cahaya Latar -->
@@ -567,6 +579,7 @@
                         {/each}
                     </div>
                 </div>            
+            {/if}
             {/if}
         </div>
     </main>
