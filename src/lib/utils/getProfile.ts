@@ -12,6 +12,7 @@
  */
 import { api } from '$lib/api/api';
 import { setAuth } from '$lib/stores/auth.svelte';
+import { error } from '@sveltejs/kit';
 import type { User } from '$lib/types';
 
 interface ProfileResponse {

@@ -17,6 +17,7 @@
  */
 
 import { browser } from '$app/environment';
+import { error, redirect } from '@sveltejs/kit';
 import { goto } from '$app/navigation';
 import { getAccessToken, setAuth, clearAuth } from '$lib/stores/auth.svelte';
 import type { User } from '$lib/types';
@@ -173,7 +174,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 		} else {
 			// Refresh failed — session is truly expired
 			if (browser) {
-				goto('/forbidden');
+				goto('/login');
 			}
 			throw new Error('Session expired. Please login again.');
 		}
