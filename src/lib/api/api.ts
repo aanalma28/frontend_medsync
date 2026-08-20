@@ -173,7 +173,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 		} else {
 			// Refresh failed — session is truly expired
 			if (browser) {
-				goto('/login');
+				goto('/forbidden');
 			}
 			throw new Error('Session expired. Please login again.');
 		}
