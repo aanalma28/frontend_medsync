@@ -1,5 +1,22 @@
 import { writable } from 'svelte/store';
 
+/**
+ * User profile returned by the backend.
+ * Used across the auth store, API responses, and dashboard components.
+ */
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    phone?: string;
+    address?: string;
+    birth_date?: string;
+    createdAt?: string;
+    staff_code?: string;
+    medical_record_number?: string;
+}
+
 export interface Login {
     role: string;
     email: string;

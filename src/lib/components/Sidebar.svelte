@@ -1,4 +1,7 @@
 <script lang="ts">
+    import { api } from '$lib/api/api';
+    import { clearAuth } from '$lib/stores/auth.svelte';
+    import { goto } from '$app/navigation';
     interface Props {
         role?: 'pasien' | 'dokter' | 'admin';
         activeMenu: string;
@@ -36,6 +39,21 @@
     function handleMenuClick(id: string) {
         onMenuSelect(id);
         onClose(); // Otomatis tutup sidebar di HP
+    }
+
+    /**
+     * Handle logout: call backend to clear DB token + cookies,
+     * then wipe in-memory auth state and redirect to login.
+     */
+    async function handleLogout() {
+        try {
+            await api.post('/auth/logout');
+        } catch {
+            // Even if the API call fails (e.g., token already expired),
+            // still clear local state and redirect
+        }
+        clearAuth();
+        goto('/login');
     }
 </script>
 
@@ -96,7 +114,7 @@
     </nav>
 
     <div class="mt-auto border-t border-slate-100 pt-4">
-        <button class="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50">
+        <button onclick={handleLogout} class="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50">
             <!-- Render ikon "Keluar" secara langsung dan aman -->
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"><path fill-rule="evenodd" d="M7.5 3.75A1.5 1.5 0 006 5.25v13.5a1.5 1.5 0 001.5 1.5h6a1.5 1.5 0 001.5-1.5V15a.75.75 0 011.5 0v3.75a3 3 0 01-3 3h-6a3 3 0 01-3-3V5.25a3 3 0 013-3h6a3 3 0 013 3V9A.75.75 0 0115 9V5.25a1.5 1.5 0 00-1.5-1.5h-6zm10.72 4.72a.75.75 0 011.06 0l3 3a.75.75 0 010 1.06l-3 3a.75.75 0 11-1.06-1.06l1.72-1.72H9a.75.75 0 010-1.5h10.94l-1.72-1.72a.75.75 0 010-1.06z" clip-rule="evenodd" /></svg>
             Keluar Akun

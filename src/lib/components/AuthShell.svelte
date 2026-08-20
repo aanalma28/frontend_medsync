@@ -1,5 +1,7 @@
 <script lang="ts">  
     import { LoginData, RegisterData } from '$lib/types';
+    import { goto } from '$app/navigation';
+    import { setAuth } from '$lib/stores/auth.svelte';
     
     interface Props {
         title: string;
@@ -103,12 +105,13 @@
                 const response = await fetch(import.meta.env.VITE_API_URL + '/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ ...$RegisterData })
                 });
 
                 if (response.ok) {
                     alert('Registrasi berhasil! Silakan masuk.');
-                    window.location.href = '/login';
+                    goto('/login');
                 } else {
                     // Handling Error Backend 400 (Bad Request dari class-validator)
                     const errorData = await response.json();
@@ -129,12 +132,28 @@
                 const response = await fetch(import.meta.env.VITE_API_URL + '/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include', // Accept remember_token HttpOnly cookie from backend
                     body: JSON.stringify({ ...$LoginData })
                 });
 
                 if(response.ok){
-                    alert('Login berhasil! Mengalihkan ke dashboard.');                    			
-                    window.location.href = selectedRole == "pasien" ? '/pasien/dashboard' : selectedRole == "dokter" ? 'doctor/dashboard' : selectedRole == "apoteker" ? 'apoteker/dashboard' : '/login'
+                    // Extract JWT + user from JSON response body
+                    const result = await response.json();
+                    const { accessToken, user } = result.data;
+
+                    // Store JWT strictly in memory (never in localStorage/sessionStorage)
+                    setAuth(accessToken, user);
+
+                    // Use goto() for client-side navigation — preserves in-memory JWT
+                    // window.location.href would cause a full reload, wiping the memory-only token
+                    const dashboardPath = selectedRole === 'pasien' 
+                        ? '/pasien/dashboard' 
+                        : selectedRole === 'dokter' 
+                            ? '/doctor/dashboard' 
+                            : selectedRole === 'apoteker' 
+                                ? '/apoteker/dashboard' 
+                                : '/login';
+                    goto(dashboardPath);
                 } else {
                     const errorData = await response.json();
                     backendError = errorData.message || 'Email atau kata sandi salah.';

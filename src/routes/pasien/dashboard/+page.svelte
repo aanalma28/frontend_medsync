@@ -1,31 +1,29 @@
 <script lang="ts">
-    import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
-    import { getProfile } from '$lib/utils/getProfile';
+    import { validateSession } from '$lib/utils/getProfile';
+    import { api } from '$lib/api/api';
+    import { authState } from '$lib/stores/auth.svelte';
     import DashboardSkeletonPasien from '$lib/components/skeleton/DashboardSkeletonPasien.svelte';
     import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
-
     let isLoading = $state(true);
 
-	onMount(() => {
-        getProfile().then((profile) => {
+	onMount(async () => {
+        try {
+            const profile = await validateSession();
             currentUser = profile;
             isLoading = false;
-        });
-    })
+        } catch {
+            // validateSession / api.ts will redirect to /login on auth failure
+            isLoading = false;
+        }
+    });
 
-    function readCookie(name: string) {
-        if (!browser || typeof document === 'undefined') return '';
-        const cookie = document.cookie.split(';').map(item => item.trim()).find(item => item.startsWith(`${name}=`));
-        return cookie ? decodeURIComponent(cookie.substring(name.length + 1)) : '';
-    }
-
-    let currentUser = $state({ 
-        role: 'pasien', 
-        name: readCookie('medsync_name') || 'Ayu Putri', 
-        id: readCookie('medsync_user_id') || 'BP-2054' 
+    let currentUser = $state<{ role: string; name: string; id: string }>({
+        role: 'pasien',
+        name: '',
+        id: ''
     });
     
     let activeMenu = $state('beranda');
@@ -116,23 +114,12 @@
 		doctorFetchError = '';
 
 		try {
-			const response = await fetch(
-				`${import.meta.env.VITE_API_URL}/appointments/doctors?poli=${encodeURIComponent(apptForm.poli)}&date=${apptForm.date}`,
-				{
-					method: 'GET',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include'
-				}
+			const response = await api.get<any>(
+				`/appointments/doctors?poli=${encodeURIComponent(apptForm.poli)}&date=${apptForm.date}`
 			);
-
-			if (response.ok) {
-				const data = await response.json();
-				availableDoctors = data.data || data || [];
-			} else {
-				doctorFetchError = 'Gagal memuat daftar dokter. Silakan coba lagi.';
-			}
-		} catch {
-			doctorFetchError = 'Tidak dapat terhubung ke server.';
+			availableDoctors = response.data || response || [];
+		} catch (err: any) {
+			doctorFetchError = err.message || 'Gagal memuat daftar dokter. Silakan coba lagi.';
 		} finally {
 			isLoadingDoctors = false;
 		}
@@ -149,23 +136,12 @@
 		doctorSchedule = [];
 
 		try {
-			const response = await fetch(
-				`${import.meta.env.VITE_API_URL}/appointments/schedule?doctor_id=${doctorId}&date=${apptForm.date}`,
-				{
-					method: 'GET',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include'
-				}
+			const response = await api.get<any>(
+				`/appointments/schedule?doctor_id=${doctorId}&date=${apptForm.date}`
 			);
-
-			if (response.ok) {
-				const data = await response.json();
-				doctorSchedule = data.data || data || [];
-			} else {
-				scheduleFetchError = 'Gagal memuat jadwal dokter.';
-			}
-		} catch {
-			scheduleFetchError = 'Tidak dapat terhubung ke server.';
+			doctorSchedule = response.data || response || [];
+		} catch (err: any) {
+			scheduleFetchError = err.message || 'Gagal memuat jadwal dokter.';
 		} finally {
 			isLoadingSchedule = false;
 		}

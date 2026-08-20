@@ -1,9 +1,10 @@
 <script lang="ts">
-    import { browser } from '$app/environment';
     import Sidebar from '$lib/components/Sidebar.svelte';
     import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
-    import { getProfile } from '$lib/utils/getProfile';
+    import { validateSession } from '$lib/utils/getProfile';
+    import { api } from '$lib/api/api';
+    import { authState } from '$lib/stores/auth.svelte';
     import DashboardSkeletonApoteker from '$lib/components/skeleton/DashboardSkeletonApoteker.svelte';
     import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 
@@ -11,23 +12,21 @@
 
     let isLoading = $state(true);
 
-    onMount(() => {        
-        getProfile().then((profile) => {
+    onMount(async () => {
+        try {
+            const profile = await validateSession();
             currentUser = profile;
             isLoading = false;
-        });
-    })
-    
-    function readCookie(name: string) {
-        if (!browser || typeof document === 'undefined') return '';
-        const cookie = document.cookie.split(';').map(item => item.trim()).find(item => item.startsWith(`${name}=`));
-        return cookie ? decodeURIComponent(cookie.substring(name.length + 1)) : '';
-    }
+        } catch {
+            // validateSession / api.ts will redirect to /login on auth failure
+            isLoading = false;
+        }
+    });
 
-    let currentUser = $state({ 
-        role: 'apoteker', 
-        name: readCookie('medsync_name') || 'Apoteker', 
-        id: readCookie('medsync_user_id') || 'APT-001' 
+    let currentUser = $state<{ role: string; name: string; id: string }>({
+        role: 'apoteker',
+        name: '',
+        id: ''
     });
     
     let activeMenu = $state('beranda');
