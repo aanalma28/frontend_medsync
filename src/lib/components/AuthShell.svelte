@@ -146,13 +146,17 @@
 
                     // Use goto() for client-side navigation — preserves in-memory JWT
                     // window.location.href would cause a full reload, wiping the memory-only token
-                    const dashboardPath = selectedRole === 'pasien' 
-                        ? '/pasien/dashboard' 
-                        : selectedRole === 'dokter' 
-                            ? '/doctor/dashboard' 
-                            : selectedRole === 'apoteker' 
-                                ? '/apoteker/dashboard' 
-                                : '/login';
+                        const dashboardPath = selectedRole === 'pasien' 
+                            ? '/pasien/dashboard' 
+                            : selectedRole === 'dokter' 
+                                ? '/doctor/dashboard' 
+                                : selectedRole === 'apoteker' 
+                                    ? '/apoteker/dashboard' 
+                                    : selectedRole === 'admin'
+                                        ? '/admin/dashboard'
+                                        : selectedRole === 'superadmin'
+                                            ? '/superadmin/dashboard'
+                                            : '/login';
                     goto(dashboardPath);
                 } else {
                     const errorData = await response.json();
@@ -257,6 +261,7 @@
                                     <option value="pasien">Pasien</option>
                                     <option value="dokter">Dokter</option>
                                     <option value="admin">Admin / Staff</option>
+                                    <option value="superadmin">Superadmin</option>
                                 </select>
                             </label>
                             <p class="mt-2 text-xs leading-5 text-slate-600">Akses janji temu, hasil pemeriksaan, dan informasi kesehatan Anda.</p>

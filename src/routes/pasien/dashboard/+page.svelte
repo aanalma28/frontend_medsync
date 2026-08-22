@@ -15,7 +15,7 @@
             currentUser = profile;
             isLoading = false;
         } catch {
-            // validateSession / api.ts will redirect to /login on auth failure
+            // validateSession / api.ts will redirect to /login on auth failure			
             isLoading = false;
         }
     });
