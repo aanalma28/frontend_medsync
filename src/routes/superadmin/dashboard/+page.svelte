@@ -50,11 +50,20 @@
 		}
 	]);
 
-	let activeAdmins = $state([
+	let allAccounts = $state([
+		{
+			id: 'SA-001',
+			name: 'Rizky Pratama',
+			email: 'rizky@medika.com',
+			role: 'superadmin',
+			branch: 'Pusat',
+			status: 'Aktif'
+		},
 		{
 			id: 'ADM-001',
 			name: 'Farhan',
 			email: 'farhan@medika.com',
+			role: 'admin',
 			branch: 'Jakarta',
 			status: 'Aktif'
 		},
@@ -62,17 +71,95 @@
 			id: 'ADM-002',
 			name: 'Lestari',
 			email: 'lestari@medika.com',
+			role: 'admin',
 			branch: 'Surabaya',
+			status: 'Aktif'
+		},
+		{
+			id: 'DKT-001',
+			name: 'dr. Andi Wijaya',
+			email: 'andi.w@medika.com',
+			role: 'dokter',
+			branch: 'Jakarta',
+			status: 'Aktif'
+		},
+		{
+			id: 'APT-001',
+			name: 'Siti Nurhaliza',
+			email: 'siti.n@medika.com',
+			role: 'apoteker',
+			branch: 'Bandung',
+			status: 'Aktif'
+		},
+		{
+			id: 'PSN-001',
+			name: 'Budi Santoso',
+			email: 'budi.s@medika.com',
+			role: 'pasien',
+			branch: '-',
 			status: 'Aktif'
 		},
 		{
 			id: 'ADM-003',
 			name: 'Bayu',
 			email: 'bayu@medika.com',
+			role: 'admin',
 			branch: 'Bandung',
 			status: 'Non-Aktif'
 		}
 	]);
+
+	// Role filter for the account management table
+	let selectedRoleFilter = $state('semua');
+	const roleOptions = [
+		{ value: 'semua', label: 'Semua Role' },
+		{ value: 'superadmin', label: 'Superadmin' },
+		{ value: 'admin', label: 'Admin' },
+		{ value: 'dokter', label: 'Dokter' },
+		{ value: 'apoteker', label: 'Apoteker' },
+		{ value: 'pasien', label: 'Pasien' }
+	];
+
+	let filteredAccounts = $derived(
+		selectedRoleFilter === 'semua'
+			? allAccounts
+			: allAccounts.filter((a) => a.role === selectedRoleFilter)
+	);
+
+	// Helper to display role badge styling
+	function getRoleBadgeClass(role: string): string {
+		switch (role) {
+			case 'superadmin':
+				return 'bg-rose-100 text-rose-700';
+			case 'admin':
+				return 'bg-indigo-100 text-indigo-700';
+			case 'dokter':
+				return 'bg-sky-100 text-sky-700';
+			case 'apoteker':
+				return 'bg-amber-100 text-amber-700';
+			case 'pasien':
+				return 'bg-emerald-100 text-emerald-700';
+			default:
+				return 'bg-slate-100 text-slate-700';
+		}
+	}
+
+	function getRoleLabel(role: string): string {
+		switch (role) {
+			case 'superadmin':
+				return 'Superadmin';
+			case 'admin':
+				return 'Admin';
+			case 'dokter':
+				return 'Dokter';
+			case 'apoteker':
+				return 'Apoteker';
+			case 'pasien':
+				return 'Pasien';
+			default:
+				return role;
+		}
+	}
 </script>
 
 <Title title="Superadmin | Dashboard" />
@@ -95,7 +182,7 @@
 		<header
 			class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden"
 		>
-			<button onclick={() => (isSidebarOpen = true)} class="text-slate-700">
+			<button onclick={() => (isSidebarOpen = true)} class="text-slate-700" aria-label="Buka menu navigasi">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					fill="none"
@@ -179,9 +266,9 @@
 							<p class="mt-1 text-xs font-semibold text-emerald-500">+15% Bulan ini</p>
 						</div>
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-							<p class="text-sm font-bold text-slate-600">Admin Operasional</p>
-							<p class="mt-3 text-3xl font-black text-slate-900">{activeAdmins.length}</p>
-							<p class="mt-1 text-xs font-semibold text-slate-500">Aktif di 3 cabang</p>
+							<p class="text-sm font-bold text-slate-600">Total Akun Terdaftar</p>
+							<p class="mt-3 text-3xl font-black text-slate-900">{allAccounts.length}</p>
+							<p class="mt-1 text-xs font-semibold text-slate-500">Semua role</p>
 						</div>
 						<div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
 							<p class="text-sm font-bold text-indigo-800">Pendapatan (Bulan Ini)</p>
@@ -254,66 +341,109 @@
 						</section>
 					</div>
 
-					<!-- MANAJEMEN ADMIN -->
+					<!-- MANAJEMEN AKUN -->
 				{:else if activeMenu === 'admin-mgmt'}
-					<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-						<div class="mb-6 flex items-center justify-between">
-							<div>
-								<h2 class="text-xl font-bold text-slate-900">Manajemen Admin Operasional</h2>
-								<p class="text-sm text-slate-500">
-									Kelola akses administrator untuk setiap cabang.
-								</p>
-							</div>
+				<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+					<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+						<div>
+							<h2 class="text-xl font-bold text-slate-900">Manajemen Akun</h2>
+							<p class="text-sm text-slate-500">
+								Kelola seluruh akun pengguna di semua role dalam sistem.
+							</p>
+						</div>
+						<div class="flex items-center gap-3">
+							<select
+								bind:value={selectedRoleFilter}
+								class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+								style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em;"
+							>
+								{#each roleOptions as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
 							<button
-								class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-slate-800"
-								>+ Tambah Admin</button
+								class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
+								>+ Tambah Akun</button
 							>
 						</div>
+					</div>
 
-						<div class="overflow-x-auto">
-							<table class="w-full text-left text-sm">
-								<thead class="bg-slate-50 text-slate-500">
-									<tr>
-										<th class="rounded-tl-lg px-4 py-3 font-semibold">ID</th>
-										<th class="px-4 py-3 font-semibold">Nama / Email</th>
-										<th class="px-4 py-3 font-semibold">Cabang</th>
-										<th class="px-4 py-3 font-semibold">Status</th>
-										<th class="rounded-tr-lg px-4 py-3 text-right font-semibold">Aksi</th>
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-slate-100">
-									{#each activeAdmins as admin}
-										<tr class="transition hover:bg-slate-50">
-											<td class="px-4 py-3 font-bold text-slate-900">{admin.id}</td>
-											<td class="px-4 py-3">
-												<p class="font-bold text-slate-800">{admin.name}</p>
-												<p class="text-xs text-slate-500">{admin.email}</p>
-											</td>
-											<td class="px-4 py-3">{admin.branch}</td>
-											<td class="px-4 py-3">
-												<span
-													class={`rounded-full px-2.5 py-1 text-[10px] font-bold ${admin.status === 'Aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}
-													>{admin.status}</span
+					<!-- Summary Cards -->
+					<div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+						{#each roleOptions.filter((r) => r.value !== 'semua') as roleOpt}
+							<button
+								onclick={() => (selectedRoleFilter = selectedRoleFilter === roleOpt.value ? 'semua' : roleOpt.value)}
+								class="rounded-xl border p-3 text-left transition {selectedRoleFilter === roleOpt.value
+									? 'border-indigo-300 bg-indigo-50 shadow-sm'
+									: 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'}"
+							>
+								<p class="text-2xl font-black text-slate-900">
+									{allAccounts.filter((a) => a.role === roleOpt.value).length}
+								</p>
+								<p class="mt-1 text-xs font-semibold text-slate-500">{roleOpt.label}</p>
+							</button>
+						{/each}
+					</div>
+
+					<div class="overflow-x-auto">
+						<table class="w-full text-left text-sm">
+							<thead class="bg-slate-50 text-slate-500">
+								<tr>
+									<th class="rounded-tl-lg px-4 py-3 font-semibold">ID</th>
+									<th class="px-4 py-3 font-semibold">Nama / Email</th>
+									<th class="px-4 py-3 font-semibold">Role</th>
+									<th class="px-4 py-3 font-semibold">Cabang</th>
+									<th class="px-4 py-3 font-semibold">Status</th>
+									<th class="rounded-tr-lg px-4 py-3 text-right font-semibold">Aksi</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-slate-100">
+								{#each filteredAccounts as account}
+									<tr class="transition hover:bg-slate-50">
+										<td class="px-4 py-3 font-bold text-slate-900">{account.id}</td>
+										<td class="px-4 py-3">
+											<p class="font-bold text-slate-800">{account.name}</p>
+											<p class="text-xs text-slate-500">{account.email}</p>
+										</td>
+										<td class="px-4 py-3">
+											<span
+												class={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${getRoleBadgeClass(account.role)}`}
+												>{getRoleLabel(account.role)}</span
+											>
+										</td>
+										<td class="px-4 py-3 text-slate-600">{account.branch}</td>
+										<td class="px-4 py-3">
+											<span
+												class={`rounded-full px-2.5 py-1 text-[10px] font-bold ${account.status === 'Aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}
+												>{account.status}</span
+											>
+										</td>
+										<td class="px-4 py-3 text-right">
+											<button class="mr-3 font-bold text-sky-600 hover:underline">Edit</button>
+											{#if account.status === 'Aktif'}
+												<button class="font-bold text-amber-600 hover:underline"
+													>Nonaktifkan</button
 												>
-											</td>
-											<td class="px-4 py-3 text-right">
-												<button class="mr-3 font-bold text-sky-600 hover:underline">Edit</button>
-												{#if admin.status === 'Aktif'}
-													<button class="font-bold text-amber-600 hover:underline"
-														>Nonaktifkan</button
-													>
-												{:else}
-													<button class="font-bold text-emerald-600 hover:underline"
-														>Aktifkan</button
-													>
-												{/if}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					</section>
+											{:else}
+												<button class="font-bold text-emerald-600 hover:underline"
+													>Aktifkan</button
+												>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+
+						{#if filteredAccounts.length === 0}
+							<div class="py-12 text-center">
+								<p class="text-sm font-semibold text-slate-400">
+									Tidak ada akun ditemukan untuk filter ini.
+								</p>
+							</div>
+						{/if}
+					</div>
+				</section>
 
 					<!-- LAPORAN FINANSIAL -->
 				{:else if activeMenu === 'reports'}

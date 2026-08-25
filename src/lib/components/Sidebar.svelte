@@ -3,7 +3,7 @@
 	import { clearAuth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	interface Props {
-		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin';
+		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin' | 'apoteker';
 		activeMenu: string;
 		isOpen: boolean;
 		onMenuSelect: (menuId: string) => void;
@@ -34,7 +34,7 @@
 		],
 		superadmin: [
 			{ id: 'beranda', label: 'Superadmin Dasbor', iconName: 'beranda' },
-			{ id: 'admin-mgmt', label: 'Manajemen Admin', iconName: 'shield' },
+			{ id: 'admin-mgmt', label: 'Manajemen Akun', iconName: 'users' },
 			{ id: 'reports', label: 'Laporan Finansial', iconName: 'chart' },
 			{ id: 'settings', label: 'Pengaturan Global', iconName: 'pengaturan' },
 			{ id: 'branches', label: 'Oversight Cabang', iconName: 'globe' }
