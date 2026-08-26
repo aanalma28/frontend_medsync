@@ -53,54 +53,6 @@ export function unescapeHtml(str: string): string {
 	return decoded;
 }
 
-// Initial fallback mock data if backend server is offline or empty
-const MOCK_DEPARTMENTS_RAW: Department[] = [
-	{
-		id: 'DPT-001',
-		id_departmen: 'DPT-001',
-		name: 'Poli Umum',
-		nama_departmen: 'Poli Umum',
-		departmen_code: 'DPT-POLI-UMUM',
-		kode_departmen: 'DPT-POLI-UMUM',
-		address: 'Gedung Utama Lantai 1, RS Medika Sehat Jakarta',
-		alamat_departmen: 'Gedung Utama Lantai 1, RS Medika Sehat Jakarta',
-		employee_count: 12
-	},
-	{
-		id: 'DPT-002',
-		id_departmen: 'DPT-002',
-		name: 'Poli Gigi & Mulut',
-		nama_departmen: 'Poli Gigi & Mulut',
-		departmen_code: 'DPT-POLI-GIGI',
-		kode_departmen: 'DPT-POLI-GIGI',
-		address: 'Gedung Utama Lantai 2, RS Medika Sehat Jakarta',
-		alamat_departmen: 'Gedung Utama Lantai 2, RS Medika Sehat Jakarta',
-		employee_count: 8
-	},
-	{
-		id: 'DPT-003',
-		id_departmen: 'DPT-003',
-		name: 'Departemen Farmasi & Apotek',
-		nama_departmen: 'Departemen Farmasi & Apotek',
-		departmen_code: 'DPT-FARMASI',
-		kode_departmen: 'DPT-FARMASI',
-		address: 'Gedung B Lantai 1, RS Medika Sehat Jakarta',
-		alamat_departmen: 'Gedung B Lantai 1, RS Medika Sehat Jakarta',
-		employee_count: 15
-	},
-	{
-		id: 'DPT-004',
-		id_departmen: 'DPT-004',
-		name: 'Laboratorium Klinik & Analisis',
-		nama_departmen: 'Laboratorium Klinik & Analisis',
-		departmen_code: 'DPT-LAB',
-		kode_departmen: 'DPT-LAB',
-		address: 'Gedung B Lantai 2, RS Medika Sehat Jakarta',
-		alamat_departmen: 'Gedung B Lantai 2, RS Medika Sehat Jakarta',
-		employee_count: 6
-	}
-];
-
 /**
  * Format raw department item to ensure property aliases exist and HTML entities are unescaped
  */
@@ -128,10 +80,8 @@ function normalizeDepartment(item: any): Department {
 	};
 }
 
-const MOCK_DEPARTMENTS: Department[] = MOCK_DEPARTMENTS_RAW.map(normalizeDepartment);
-
 // Reactive Svelte 5 state
-let departmentsList = $state<Department[]>(MOCK_DEPARTMENTS);
+let departmentsList = $state<Department[]>([]);
 let isLoading = $state<boolean>(false);
 let error = $state<string | null>(null);
 let meta = $state<MetaPagination | null>(null);
