@@ -7,18 +7,27 @@
 	import { authState } from '$lib/stores/auth.svelte';
 	import DashboardSkeletonApoteker from '$lib/components/skeleton/DashboardSkeletonApoteker.svelte';
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
+	import ErrorState from '$lib/components/ErrorState.svelte';
 
 	type PrescriptionStatus = 'Menunggu' | 'Siap ambil' | 'Selesai';
 
 	let isLoading = $state(true);
+	let isForbidden = $state(false);
 
 	onMount(async () => {
 		try {
 			const profile = await validateSession();
-			currentUser = profile;
-			isLoading = false;
-		} catch {
-			// validateSession / api.ts will redirect to /login on auth failure
+
+			// Cek role secara ketat di client-side
+			if (profile.role.toLowerCase() !== 'pharmacist') {
+				isForbidden = true;
+			} else {
+				currentUser = profile;
+			}
+		} catch (err) {
+			console.error('Gagal verifikasi sesi:', err);
+			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
+		} finally {
 			isLoading = false;
 		}
 	});
@@ -147,6 +156,8 @@
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
 	{#if isLoading}
 		<SidebarSkeleton />
+	{:else if isForbidden}
+		<div></div>
 	{:else}
 		<Sidebar
 			role="apoteker"
@@ -158,35 +169,39 @@
 	{/if}
 
 	<main class="flex h-full flex-1 flex-col overflow-hidden">
-		<header
-			class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden"
-		>
-			<!-- svelte-ignore a11y_consider_explicit_label -->
-			<button onclick={() => (isSidebarOpen = true)} class="text-amber-700"
-				><svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="2"
-					stroke="currentColor"
-					class="h-7 w-7"
-					><path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"
-					/></svg
-				></button
+		{#if !isForbidden}
+			<header
+				class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden"
 			>
-			<div
-				class="rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
-			>
-				ID: {currentUser.id}
-			</div>
-		</header>
+				<!-- svelte-ignore a11y_consider_explicit_label -->
+				<button onclick={() => (isSidebarOpen = true)} class="text-amber-700"
+					><svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="2"
+						stroke="currentColor"
+						class="h-7 w-7"
+						><path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"
+						/></svg
+					></button
+				>
+				<div
+					class="rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
+				>
+					ID: {currentUser.id}
+				</div>
+			</header>
+		{/if}
 
-		<div class="flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10">
+		<div class={!isForbidden ? 'flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10' : ''}>
 			{#if isLoading}
 				<DashboardSkeletonApoteker />
+			{:else if isForbidden}
+				<ErrorState status={403} />
 			{:else}
 				<!-- HEADER HERO APOTEKER -->
 				<div

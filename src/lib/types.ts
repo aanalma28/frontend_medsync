@@ -18,7 +18,6 @@ export interface User {
 }
 
 export interface Login {
-    role: string;
     email: string;
     password: string;
     remember_me?: boolean;
@@ -38,7 +37,6 @@ export interface Register {
 
 // svelte store variables
 export const LoginData = writable<Login>({
-    role: 'pasien',
     email: '',
     password: '',
     remember_me: false
