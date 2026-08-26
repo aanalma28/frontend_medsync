@@ -35,6 +35,7 @@
 		superadmin: [
 			{ id: 'beranda', label: 'Superadmin Dasbor', iconName: 'beranda' },
 			{ id: 'admin-mgmt', label: 'Manajemen Akun', iconName: 'users' },
+			{ id: 'departemen', label: 'Manajemen Departemen', iconName: 'building' },
 			{ id: 'reports', label: 'Laporan Finansial', iconName: 'chart' },
 			{ id: 'settings', label: 'Pengaturan Global', iconName: 'pengaturan' },
 			{ id: 'branches', label: 'Oversight Cabang', iconName: 'globe' }
