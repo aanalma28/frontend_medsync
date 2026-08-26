@@ -5,6 +5,8 @@ export interface Department {
 	name: string;
 	departmen_code: string;
 	address: string;
+	city?: string;
+	cabang?: string;
 	employee_count?: number;
 	// Property aliases for full backwards compatibility across UI components
 	id_departmen?: string;
@@ -61,10 +63,12 @@ function normalizeDepartment(item: any): Department {
 	const rawName = item.name || item.nama_departmen || '';
 	const rawCode = item.departmen_code || item.kode_departmen || item.code || '';
 	const rawAddress = item.address || item.alamat_departmen || '';
+	const rawCity = item.city || item.cabang || '';
 
 	const name = unescapeHtml(rawName);
 	const departmen_code = unescapeHtml(rawCode);
 	const address = unescapeHtml(rawAddress);
+	const city = unescapeHtml(rawCity);
 	const employee_count = typeof item.employee_count === 'number' ? item.employee_count : 0;
 
 	return {
@@ -76,6 +80,8 @@ function normalizeDepartment(item: any): Department {
 		kode_departmen: departmen_code,
 		address,
 		alamat_departmen: address,
+		city,
+		cabang: city,
 		employee_count
 	};
 }
@@ -137,7 +143,7 @@ export async function getDepartmentById(id: string): Promise<Department | null> 
 /**
  * POST /departments — Create a new department
  */
-export async function createDepartment(payload: { name: string; departmen_code: string; address: string }) {
+export async function createDepartment(payload: { name: string; departmen_code: string; address: string; city?: string; cabang?: string }) {
 	isLoading = true;
 	error = null;
 
@@ -161,6 +167,7 @@ export async function createDepartment(payload: { name: string; departmen_code: 
 				name: payload.name,
 				departmen_code: payload.departmen_code.toUpperCase(),
 				address: payload.address,
+				city: payload.city || payload.cabang,
 				employee_count: 0
 			});
 			departmentsList = [newDept, ...departmentsList];
@@ -176,7 +183,7 @@ export async function createDepartment(payload: { name: string; departmen_code: 
 /**
  * PATCH /departments/:id — Update existing department
  */
-export async function updateDepartment(id: string, payload: { name?: string; departmen_code?: string; address?: string }) {
+export async function updateDepartment(id: string, payload: { name?: string; departmen_code?: string; address?: string; city?: string; cabang?: string }) {
 	isLoading = true;
 	error = null;
 
@@ -199,7 +206,8 @@ export async function updateDepartment(id: string, payload: { name?: string; dep
 					...d,
 					name: payload.name ?? d.name,
 					departmen_code: payload.departmen_code ? payload.departmen_code.toUpperCase() : d.departmen_code,
-					address: payload.address ?? d.address
+					address: payload.address ?? d.address,
+					city: payload.city ?? payload.cabang ?? d.city
 				});
 			}
 			return d;

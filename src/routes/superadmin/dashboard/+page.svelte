@@ -7,6 +7,7 @@
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import { departmentStore } from '$lib/stores/department.svelte';
+	import { userStore, type UserItem } from '$lib/stores/user.svelte';
 
 	type DashboardUser = { role: string; name: string; id: string };
 
@@ -25,8 +26,11 @@
 				currentUser = profile;
 			}
 
-			// Panggil API departemen via departmentStore (/departments)
-			await departmentStore.fetchDepartments();
+			// Panggil API departemen (/departments) dan API user (/users)
+			await Promise.all([
+				departmentStore.fetchDepartments(),
+				userStore.fetchUsers()
+			]);
 		} catch (err) {
 			console.error('Gagal verifikasi sesi:', err);
 			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
@@ -38,89 +42,8 @@
 	let activeMenu = $state('beranda');
 	let isSidebarOpen = $state(false);
 
-	// --- DUMMY DATA FOR SUPERADMIN ---
-	let branches = $state([
-		{
-			id: 'BR-JKT',
-			name: 'RS Medika Sehat Jakarta',
-			status: 'Operasional',
-			revenue: 'Rp 2.5B',
-			patients: 1250
-		},
-		{
-			id: 'BR-SBY',
-			name: 'RS Medika Sehat Surabaya',
-			status: 'Operasional',
-			revenue: 'Rp 1.8B',
-			patients: 950
-		},
-		{
-			id: 'BR-BDG',
-			name: 'RS Medika Sehat Bandung',
-			status: 'Maintenance',
-			revenue: 'Rp 800M',
-			patients: 400
-		}
-	]);
-
-	let allAccounts = $state([
-		{
-			id: 'SA-001',
-			name: 'Rizky Pratama',
-			email: 'rizky@medika.com',
-			role: 'superadmin',
-			branch: 'Pusat',
-			status: 'Aktif'
-		},
-		{
-			id: 'ADM-001',
-			name: 'Farhan',
-			email: 'farhan@medika.com',
-			role: 'admin',
-			branch: 'Jakarta',
-			status: 'Aktif'
-		},
-		{
-			id: 'ADM-002',
-			name: 'Lestari',
-			email: 'lestari@medika.com',
-			role: 'admin',
-			branch: 'Surabaya',
-			status: 'Aktif'
-		},
-		{
-			id: 'DKT-001',
-			name: 'dr. Andi Wijaya',
-			email: 'andi.w@medika.com',
-			role: 'dokter',
-			branch: 'Jakarta',
-			status: 'Aktif'
-		},
-		{
-			id: 'APT-001',
-			name: 'Siti Nurhaliza',
-			email: 'siti.n@medika.com',
-			role: 'apoteker',
-			branch: 'Bandung',
-			status: 'Aktif'
-		},
-		{
-			id: 'PSN-001',
-			name: 'Budi Santoso',
-			email: 'budi.s@medika.com',
-			role: 'pasien',
-			branch: '-',
-			status: 'Aktif'
-		},
-		{
-			id: 'ADM-003',
-			name: 'Bayu',
-			email: 'bayu@medika.com',
-			role: 'admin',
-			branch: 'Bandung',
-			status: 'Non-Aktif'
-		}
-	]);
+	// --- DATA USERS DARI BACKEND SERVICE (/users) ---
+	let allAccounts = $derived(userStore.list);
 
 	// Role filter for the account management table
 	let selectedRoleFilter = $state('semua');
@@ -199,10 +122,11 @@
 		role: 'pasien',
 		alamat: '',
 		phone: '',
-		tanggalLahir: ''
+		tanggalLahir: '',
+		departmenId: ''
 	});
 
-	// --- Real-time Validation (Referensi: AuthShell.svelte) ---
+	// --- Real-time Validation ---
 	let isAddNameValid = $derived(addUserForm.nama.length >= 3 && addUserForm.nama.length <= 100);
 
 	let isAddEmailValid = $derived(
@@ -211,7 +135,7 @@
 
 	// Pecahan validasi password
 	let isAddPwdLength = $derived(
-		addUserForm.password.length >= 8 && addUserForm.password.length <= 128
+		addUserForm.password.length >= 6 && addUserForm.password.length <= 128
 	);
 	let isAddPwdUpper = $derived(/[A-Z]/.test(addUserForm.password));
 	let isAddPwdLower = $derived(/[a-z]/.test(addUserForm.password));
@@ -240,7 +164,9 @@
 	});
 
 	let isAddAddressValid = $derived(
-		addUserForm.alamat.length >= 10 && addUserForm.alamat.length <= 255
+		addUserForm.role === 'pasien'
+			? addUserForm.alamat.length >= 10 && addUserForm.alamat.length <= 255
+			: Boolean(addUserForm.departmenId)
 	);
 
 	let isAddRoleValid = $derived(addUserRoleOptions.some((r) => r.value === addUserForm.role));
@@ -254,7 +180,7 @@
 			? 'Jl. Pemuda No. 45, Kudus, Jawa Tengah'
 			: 'Jl. RS Medika Sehat No. 12, Jakarta Selatan'
 	);
-	// Kunci utama: Apakah form tambah user valid untuk di-submit?
+
 	let isAddFormValid = $derived(
 		isAddNameValid &&
 			isAddEmailValid &&
@@ -266,7 +192,6 @@
 			isAddBirthDateValid()
 	);
 
-	// Mendapatkan tanggal maksimum (hari ini) untuk input tanggal lahir
 	function getTodayDate(): string {
 		return new Date().toISOString().split('T')[0];
 	}
@@ -281,7 +206,8 @@
 			role: 'pasien',
 			alamat: '',
 			phone: '',
-			tanggalLahir: ''
+			tanggalLahir: '',
+			departmenId: ''
 		};
 		addUserBackendError = '';
 		isAddUserSubmitting = false;
@@ -301,50 +227,90 @@
 		isAddUserSubmitting = true;
 
 		try {
-			const payload = {
-				role: addUserForm.role,
-				name: addUserForm.nama,
-				email: addUserForm.email,
-				phone: addUserForm.phone,
-				address: addUserForm.alamat,
-				birth_date: addUserForm.tanggalLahir,
-				password: addUserForm.password,
-				confirm_password: addUserForm.confirmPassword,
-				accepted_terms: true
-			};
-
-			const response = await fetch(import.meta.env.VITE_API_URL + '/auth/register', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include',
-				body: JSON.stringify(payload)
-			});
-
-			if (response.ok) {
-				// Sukses — tutup modal & bisa refresh data
-				alert('User berhasil ditambahkan!');
-				closeAddUserModal();
+			if (addUserForm.role === 'pasien') {
+				await userStore.createPatient({
+					name: addUserForm.nama,
+					email: addUserForm.email,
+					password: addUserForm.password,
+					phone: addUserForm.phone,
+					address: addUserForm.alamat,
+					birth_date: addUserForm.tanggalLahir,
+					accepted_terms: true
+				});
 			} else {
-				const errorData = await response.json();
-				if (Array.isArray(errorData.message)) {
-					addUserBackendError = errorData.message.join(' • ');
-				} else {
-					addUserBackendError = errorData.message || 'Terjadi kesalahan validasi server.';
-				}
+				let mappedRole: 'SUPERADMIN' | 'MASTERADMIN' | 'REGISTER_ADMIN' | 'DOCTOR' | 'PHARMACIST' | 'NURSE' = 'DOCTOR';
+				if (addUserForm.role === 'superadmin') mappedRole = 'SUPERADMIN';
+				else if (addUserForm.role === 'admin') mappedRole = 'REGISTER_ADMIN';
+				else if (addUserForm.role === 'dokter') mappedRole = 'DOCTOR';
+				else if (addUserForm.role === 'apoteker') mappedRole = 'PHARMACIST';
+				else if (addUserForm.role === 'perawat') mappedRole = 'NURSE';
+
+				await userStore.createStaff({
+					name: addUserForm.nama,
+					email: addUserForm.email,
+					password: addUserForm.password,
+					role: mappedRole,
+					departmen_id: addUserForm.departmenId,
+					phone: addUserForm.phone,
+					address: addUserForm.alamat || undefined,
+					birth_date: addUserForm.tanggalLahir
+				});
 			}
-		} catch {
-			addUserBackendError = 'Gagal terhubung ke server. Pastikan backend menyala.';
+
+			alert('Akun user berhasil dibuat!');
+			closeAddUserModal();
+			await userStore.fetchUsers();
+		} catch (err: any) {
+			addUserBackendError = err?.message || 'Terjadi kesalahan validasi server.';
 		} finally {
 			isAddUserSubmitting = false;
 		}
 	}
 
 	// =============================================
-	// MANAJEMEN DEPARTEMEN — State & Validation via departmentStore
+	// GET SPECIFIC USER DETAIL MODAL (GET /users/:id)
+	// =============================================
+	let showUserDetailModal = $state(false);
+	let isFetchingUserDetail = $state(false);
+	let selectedUserDetail = $state<UserItem | null>(null);
+
+	async function openUserDetail(id: string) {
+		isFetchingUserDetail = true;
+		showUserDetailModal = true;
+		selectedUserDetail = null;
+		try {
+			const detail = await userStore.getUserById(id);
+			selectedUserDetail = detail;
+		} catch (err) {
+			console.error('Gagal mengambil detail user:', err);
+		} finally {
+			isFetchingUserDetail = false;
+		}
+	}
+
+	function closeUserDetailModal() {
+		showUserDetailModal = false;
+		selectedUserDetail = null;
+	}
+
+	async function handleToggleUserStatus(account: UserItem) {
+		try {
+			if (account.is_active) {
+				await userStore.deleteUser(account.id);
+			} else {
+				await userStore.updateUser(account.id, { is_active: true });
+			}
+			await userStore.fetchUsers();
+		} catch (err: any) {
+			alert(err?.message || 'Gagal mengubah status user');
+		}
+	}
+
+	// =============================================
+	// MANAJEMEN DEPARTEMEN — State & Validation
 	// =============================================
 	let departments = $derived(departmentStore.list);
 
-	// Search & Selected preview departemen dalam modal Tambah User
 	let deptSearchInUserModal = $state('');
 	let modalFilteredDepartments = $derived(
 		deptSearchInUserModal.trim() === ''
@@ -358,7 +324,7 @@
 	);
 	let selectedDept = $derived(
 		departments.find(
-			(d) => d.alamat_departmen === addUserForm.alamat || d.address === addUserForm.alamat
+			(d) => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId
 		)
 	);
 
@@ -372,13 +338,13 @@
 	let deptForm = $state({
 		code: '',
 		name: '',
+		city: '',
 		address: ''
 	});
 
 	let showDeleteDeptModal = $state(false);
 	let deletingDept = $state<{ id: string; name: string } | null>(null);
 
-	// Form validation matching backend constraints using $derived
 	let isDeptCodeValid = $derived(
 		/^[A-Za-z0-9_-]{2,50}$/.test(deptForm.code.trim())
 	);
@@ -400,22 +366,24 @@
 					(d) =>
 						(d.departmen_code || d.kode_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
 						(d.name || d.nama_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
+						(d.city || d.cabang || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
 						(d.address || d.alamat_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase())
 				)
 	);
 
 	function openAddDeptModal() {
-		deptForm = { code: '', name: '', address: '' };
+		deptForm = { code: '', name: '', city: '', address: '' };
 		isEditDept = false;
 		editingDeptId = null;
 		deptModalError = null;
 		showDeptModal = true;
 	}
 
-	function openEditDeptModal(dept: { id: string; id_departmen?: string; code?: string; departmen_code?: string; kode_departmen?: string; name?: string; nama_departmen?: string; address?: string; alamat_departmen?: string }) {
+	function openEditDeptModal(dept: { id: string; id_departmen?: string; code?: string; departmen_code?: string; kode_departmen?: string; name?: string; nama_departmen?: string; city?: string; cabang?: string; address?: string; alamat_departmen?: string }) {
 		deptForm = {
 			code: dept.departmen_code || dept.kode_departmen || dept.code || '',
 			name: dept.name || dept.nama_departmen || '',
+			city: dept.city || dept.cabang || '',
 			address: dept.address || dept.alamat_departmen || ''
 		};
 		isEditDept = true;
@@ -438,6 +406,7 @@
 
 		const cleanCode = deptForm.code.trim().toUpperCase();
 		const cleanName = deptForm.name.trim();
+		const cleanCity = deptForm.city.trim();
 		const cleanAddress = deptForm.address.trim();
 
 		try {
@@ -445,12 +414,16 @@
 				await departmentStore.updateDepartment(editingDeptId, {
 					departmen_code: cleanCode,
 					name: cleanName,
+					city: cleanCity || undefined,
+					cabang: cleanCity || undefined,
 					address: cleanAddress
 				});
 			} else {
 				await departmentStore.createDepartment({
 					departmen_code: cleanCode,
 					name: cleanName,
+					city: cleanCity || undefined,
+					cabang: cleanCity || undefined,
 					address: cleanAddress
 				});
 			}
@@ -577,7 +550,7 @@
 							</div>
 							<h1 class="text-3xl font-black sm:text-4xl">Dashboard Strategis 🌐</h1>
 							<p class="mt-2 text-sm text-slate-400 sm:text-base">
-								Pengawasan lintas cabang, analitik bisnis, dan konfigurasi sistem inti.
+								Pengawasan lintas unit, analitik bisnis, dan manajemen pengguna sistem.
 							</p>
 						</div>
 					</div>
@@ -587,14 +560,14 @@
 				{#if activeMenu === 'beranda'}
 					<section class="mb-6 grid gap-4 sm:grid-cols-4">
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-							<p class="text-sm font-bold text-slate-600">Total Cabang</p>
-							<p class="mt-3 text-3xl font-black text-slate-900">{branches.length}</p>
-							<p class="mt-1 text-xs font-semibold text-emerald-500">100% Online</p>
+							<p class="text-sm font-bold text-slate-600">Total Departemen</p>
+							<p class="mt-3 text-3xl font-black text-slate-900">{departments.length}</p>
+							<p class="mt-1 text-xs font-semibold text-emerald-500">100% Aktif</p>
 						</div>
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-							<p class="text-sm font-bold text-slate-600">Total Pasien (Global)</p>
-							<p class="mt-3 text-3xl font-black text-slate-900">2,600</p>
-							<p class="mt-1 text-xs font-semibold text-emerald-500">+15% Bulan ini</p>
+							<p class="text-sm font-bold text-slate-600">Total Pasien</p>
+							<p class="mt-3 text-3xl font-black text-slate-900">{allAccounts.filter((a) => a.role === 'pasien').length}</p>
+							<p class="mt-1 text-xs font-semibold text-emerald-500">Terdaftar di Sistem</p>
 						</div>
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 							<p class="text-sm font-bold text-slate-600">Total Akun Terdaftar</p>
@@ -613,7 +586,7 @@
 							<div class="mb-8 flex items-center justify-between">
 								<div>
 									<h2 class="text-xl font-bold text-slate-900">Grafik Kunjungan Pasien</h2>
-									<p class="text-sm text-slate-500">Agregasi dari seluruh cabang</p>
+									<p class="text-sm text-slate-500">Agregasi dari seluruh unit</p>
 								</div>
 								<select
 									class="appearance-none rounded-md border border-gray-300 bg-white px-3 py-2 pr-10 pl-3 shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -625,8 +598,7 @@
 							</div>
 
 							<div class="mt-8 flex h-64 items-end justify-between gap-2">
-								<!-- Dummy Bar Chart -->
-								{#each [40, 70, 45, 90, 65, 85, 100] as height, i}
+								{#each [40, 70, 45, 90, 65, 85, 100] as height}
 									<div
 										class="group relative flex h-full w-full cursor-pointer flex-col justify-end"
 									>
@@ -651,20 +623,20 @@
 							</div>
 						</section>
 
-						<!-- List Cabang -->
+						<!-- List Departemen Ringkas -->
 						<section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-							<h2 class="mb-4 text-xl font-bold text-slate-900">Status Cabang</h2>
+							<h2 class="mb-4 text-xl font-bold text-slate-900">Status Departemen</h2>
 							<ul class="space-y-4">
-								{#each branches as branch}
+								{#each departments as dept}
 									<li class="flex items-center justify-between border-b border-slate-50 pb-3">
 										<div>
-											<h3 class="font-bold text-slate-800">{branch.name}</h3>
-											<p class="text-xs text-slate-500">Pendapatan: {branch.revenue}</p>
+											<h3 class="font-bold text-slate-800">{dept.name || dept.nama_departmen}</h3>
+											<p class="text-xs text-slate-500">Kode: {dept.departmen_code || dept.kode_departmen}</p>
 										</div>
 										<span
-											class={`rounded-md px-2 py-1 text-[10px] font-black tracking-wider uppercase ${branch.status === 'Operasional' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+											class="rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black tracking-wider text-emerald-700 uppercase"
 										>
-											{branch.status}
+											Operasional
 										</span>
 									</li>
 								{/each}
@@ -679,7 +651,7 @@
 							<div>
 								<h2 class="text-xl font-bold text-slate-900">Manajemen Akun</h2>
 								<p class="text-sm text-slate-500">
-									Kelola seluruh akun pengguna di semua role dalam sistem.
+									Kelola seluruh akun pengguna di semua role dalam sistem MedSync.
 								</p>
 							</div>
 							<div class="flex items-center gap-3">
@@ -720,50 +692,285 @@
 							{/each}
 						</div>
 
-						<div class="overflow-x-auto">
+						<!-- Mobile Card View (Responsif untuk HP/Tablet kecil) -->
+						<div class="block space-y-3 md:hidden">
+							{#each filteredAccounts as account}
+								<div
+									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
+								>
+									<!-- Card Header: ID, Role, Status -->
+									<div class="flex items-center justify-between border-b border-slate-100 pb-3">
+										<div class="flex items-center gap-2">
+											<span class="font-mono text-xs font-black text-slate-900"
+												>{account.displayId || account.id}</span
+											>
+											<span
+												class={`rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wider uppercase ${getRoleBadgeClass(account.role)}`}
+											>
+												{getRoleLabel(account.role)}
+											</span>
+										</div>
+										{#if account.is_active}
+											<span
+												class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-600/20"
+											>
+												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+												Aktif
+											</span>
+										{:else}
+											<span
+												class="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-600/20"
+											>
+												<span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+												Non-Aktif
+											</span>
+										{/if}
+									</div>
+
+									<!-- Card Body: User Info -->
+									<div class="my-3 space-y-1">
+										<p class="text-sm font-bold text-slate-900">{account.name}</p>
+										<p class="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="1.5"
+												stroke="currentColor"
+												class="h-3.5 w-3.5 text-slate-400 shrink-0"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+												/>
+											</svg>
+											<span class="truncate">{account.email}</span>
+										</p>
+										{#if account.branch && account.branch !== '-'}
+											<p class="flex items-center gap-1.5 text-xs text-slate-600 pt-0.5">
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="1.5"
+													stroke="currentColor"
+													class="h-3.5 w-3.5 text-indigo-500 shrink-0"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75"
+													/>
+												</svg>
+												<span>{account.branch}</span>
+											</p>
+										{/if}
+									</div>
+
+									<!-- Card Footer: Action Buttons Grid -->
+									<div class="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+										<button
+											onclick={() => openUserDetail(account.id)}
+											class="flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 transition active:scale-95 hover:bg-sky-100"
+										>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="2"
+												stroke="currentColor"
+												class="h-3.5 w-3.5"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.573 16.49 16.638 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+												/>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+												/>
+											</svg>
+											<span>Detail / Edit</span>
+										</button>
+
+										{#if account.is_active}
+											<button
+												onclick={() => handleToggleUserStatus(account)}
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+													stroke="currentColor"
+													class="h-3.5 w-3.5"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+													/>
+												</svg>
+												<span>Nonaktifkan</span>
+											</button>
+										{:else}
+											<button
+												onclick={() => handleToggleUserStatus(account)}
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+													stroke="currentColor"
+													class="h-3.5 w-3.5"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+													/>
+												</svg>
+												<span>Aktifkan</span>
+											</button>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+
+						<!-- Desktop Table View -->
+						<div class="hidden md:block overflow-x-auto">
 							<table class="w-full text-left text-sm">
 								<thead class="bg-slate-50 text-slate-500">
 									<tr>
-										<th class="rounded-tl-lg px-4 py-3 font-semibold">ID</th>
-										<th class="px-4 py-3 font-semibold">Nama / Email</th>
-										<th class="px-4 py-3 font-semibold">Role</th>
-										<th class="px-4 py-3 font-semibold">Cabang</th>
-										<th class="px-4 py-3 font-semibold">Status</th>
-										<th class="rounded-tr-lg px-4 py-3 text-right font-semibold">Aksi</th>
+										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap">ID / Kode</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Nama / Email</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Role</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Departemen</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Status</th>
+										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap">Aksi</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredAccounts as account}
-										<tr class="transition hover:bg-slate-50">
-											<td class="px-4 py-3 font-bold text-slate-900">{account.id}</td>
-											<td class="px-4 py-3">
+										<tr class="transition hover:bg-slate-50/80">
+											<td class="px-4 py-3.5 font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
+												{account.displayId || account.id}
+											</td>
+											<td class="px-4 py-3.5">
 												<p class="font-bold text-slate-800">{account.name}</p>
 												<p class="text-xs text-slate-500">{account.email}</p>
 											</td>
-											<td class="px-4 py-3">
+											<td class="px-4 py-3.5 whitespace-nowrap">
 												<span
-													class={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(account.role)}`}
-													>{getRoleLabel(account.role)}</span
+													class={`rounded-full px-2.5 py-1 text-[10px] font-extrabold tracking-wider uppercase ${getRoleBadgeClass(account.role)}`}
 												>
+													{getRoleLabel(account.role)}
+												</span>
 											</td>
-											<td class="px-4 py-3 text-slate-600">{account.branch}</td>
-											<td class="px-4 py-3">
-												<span
-													class={`rounded-full px-2.5 py-1 text-[10px] font-bold ${account.status === 'Aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}
-													>{account.status}</span
-												>
-											</td>
-											<td class="px-4 py-3 text-right">
-												<button class="mr-3 font-bold text-sky-600 hover:underline">Edit</button>
-												{#if account.status === 'Aktif'}
-													<button class="font-bold text-amber-600 hover:underline"
-														>Nonaktifkan</button
+											<td class="px-4 py-3.5 text-slate-600 font-medium whitespace-nowrap">{account.branch || '-'}</td>
+											
+											<!-- Polished Status Column -->
+											<td class="px-4 py-3.5 whitespace-nowrap">
+												{#if account.is_active}
+													<span
+														class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-600/20"
 													>
+														<span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+														Aktif
+													</span>
 												{:else}
-													<button class="font-bold text-emerald-600 hover:underline"
-														>Aktifkan</button
+													<span
+														class="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-rose-600/20"
 													>
+														<span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+														Non-Aktif
+													</span>
 												{/if}
+											</td>
+
+											<!-- Polished Action Buttons Column -->
+											<td class="px-4 py-3.5 text-right whitespace-nowrap">
+												<div class="inline-flex items-center justify-end gap-2">
+													<button
+														onclick={() => openUserDetail(account.id)}
+														class="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-500/20 shadow-2xs"
+														title="Lihat Detail & Edit Akun"
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="2"
+															stroke="currentColor"
+															class="h-3.5 w-3.5"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.573 16.49 16.638 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+															/>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+															/>
+														</svg>
+														<span>Detail / Edit</span>
+													</button>
+
+													{#if account.is_active}
+														<button
+															onclick={() => handleToggleUserStatus(account)}
+															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs"
+															title="Nonaktifkan Akun"
+														>
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="2"
+																stroke="currentColor"
+																class="h-3.5 w-3.5"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+																/>
+															</svg>
+															<span>Nonaktifkan</span>
+														</button>
+													{:else}
+														<button
+															onclick={() => handleToggleUserStatus(account)}
+															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-2xs"
+															title="Aktifkan Akun"
+														>
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="2"
+																stroke="currentColor"
+																class="h-3.5 w-3.5"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+																/>
+															</svg>
+															<span>Aktifkan</span>
+														</button>
+													{/if}
+												</div>
 											</td>
 										</tr>
 									{/each}
@@ -838,39 +1045,103 @@
 							</div>
 						</div>
 
-						<div class="overflow-x-auto">
+						<!-- Mobile Card View Departemen -->
+						<div class="block space-y-3 md:hidden">
+							{#each filteredDepartments as dept}
+								<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200">
+									<div class="flex items-center justify-between border-b border-slate-100 pb-3">
+										<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700">
+											{dept.departmen_code || dept.kode_departmen}
+										</span>
+										<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+											Operasional
+										</span>
+									</div>
+									<div class="my-3 space-y-1">
+										<h3 class="font-bold text-slate-900 text-sm">{dept.nama_departmen || dept.name}</h3>
+										{#if dept.city || dept.cabang}
+											<p class="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-3.5 w-3.5 shrink-0">
+													<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75" />
+												</svg>
+												<span>Cabang {dept.city || dept.cabang}</span>
+											</p>
+										{/if}
+										<p class="flex items-start gap-1 text-xs text-slate-500">
+											<span class="shrink-0 text-slate-400">📍</span>
+											<span>{dept.alamat_departmen || dept.address}</span>
+										</p>
+									</div>
+									<div class="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+										<button
+											onclick={() => openEditDeptModal(dept)}
+											class="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition active:scale-95 hover:bg-indigo-100"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+											</svg>
+											<span>Edit</span>
+										</button>
+										<button
+											onclick={() => openDeleteDeptModal(dept)}
+											class="flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition active:scale-95 hover:bg-rose-100"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+											</svg>
+											<span>Hapus</span>
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+
+						<!-- Desktop Table View Departemen -->
+						<div class="hidden md:block overflow-x-auto">
 							<table class="w-full text-left text-sm">
 								<thead class="bg-slate-50 text-slate-500">
 									<tr>
-										<th class="rounded-tl-lg px-4 py-3 font-semibold">Kode Departemen</th>
-										<th class="px-4 py-3 font-semibold">Nama Departemen</th>
-										<th class="px-4 py-3 font-semibold">Alamat Departemen</th>
-										<th class="rounded-tr-lg px-4 py-3 text-right font-semibold">Aksi</th>
+										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap">Kode Departemen</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Nama Departemen</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Cabang / Kota</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Alamat Departemen</th>
+										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap">Aksi</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredDepartments as dept}
-										<tr class="transition hover:bg-slate-50">
-											<td class="px-4 py-3">
-												<span class="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 border border-indigo-100">
+										<tr class="transition hover:bg-slate-50/80">
+											<td class="px-4 py-3.5 whitespace-nowrap">
+												<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
 													{dept.departmen_code || dept.kode_departmen}
 												</span>
 											</td>
-											<td class="px-4 py-3 font-bold text-slate-800">{dept.nama_departmen || dept.name}</td>
-											<td class="px-4 py-3 text-slate-600 max-w-xs truncate">{dept.alamat_departmen || dept.address}</td>
-											<td class="px-4 py-3 text-right">
-												<button
-													onclick={() => openEditDeptModal(dept)}
-													class="mr-3 font-bold text-sky-600 hover:underline"
-												>
-													Edit
-												</button>
-												<button
-													onclick={() => openDeleteDeptModal(dept)}
-													class="font-bold text-rose-600 hover:underline"
-												>
-													Hapus
-												</button>
+											<td class="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{dept.nama_departmen || dept.name}</td>
+											<td class="px-4 py-3.5 font-semibold text-indigo-900 whitespace-nowrap">{dept.city || dept.cabang || '-'}</td>
+											<td class="max-w-xs truncate px-4 py-3.5 text-slate-600">{dept.alamat_departmen || dept.address}</td>
+											<td class="px-4 py-3.5 text-right whitespace-nowrap">
+												<div class="inline-flex items-center justify-end gap-2">
+													<button
+														onclick={() => openEditDeptModal(dept)}
+														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+														title="Edit Departemen"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+															<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+														</svg>
+														<span>Edit</span>
+													</button>
+													<button
+														onclick={() => openDeleteDeptModal(dept)}
+														class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500/20 shadow-2xs"
+														title="Hapus Departemen"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+															<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+														</svg>
+														<span>Hapus</span>
+													</button>
+												</div>
 											</td>
 										</tr>
 									{/each}
@@ -924,7 +1195,6 @@
 						<h2 class="mb-6 text-xl font-bold text-slate-900">Pengaturan Sistem Global</h2>
 
 						<div class="space-y-6 divide-y divide-slate-100">
-							<!-- Backup -->
 							<div class="flex items-center justify-between pb-4">
 								<div>
 									<p class="font-bold text-slate-800">Backup Database Terjadwal</p>
@@ -932,7 +1202,6 @@
 										Lakukan backup otomatis setiap jam 02:00 AM
 									</p>
 								</div>
-								<!-- Toggle -->
 								<label for="toggle1" class="mr-2 flex cursor-pointer items-center">
 									<div class="relative">
 										<input type="checkbox" id="toggle1" class="peer sr-only" checked />
@@ -946,7 +1215,6 @@
 								</label>
 							</div>
 
-							<!-- Maintenance -->
 							<div class="flex items-center justify-between pt-4 pb-4">
 								<div>
 									<p class="font-bold text-slate-800">Mode Perawatan (Maintenance Mode)</p>
@@ -967,7 +1235,6 @@
 								</label>
 							</div>
 
-							<!-- Log retention -->
 							<div class="pt-4">
 								<label class="block">
 									<span class="mb-1.5 block text-sm font-bold text-slate-700"
@@ -1028,7 +1295,7 @@
 				</div>
 				<div>
 					<h2 class="text-xl font-bold text-slate-900">Tambah User Baru</h2>
-					<p class="text-sm text-slate-500">Buat akun pengguna dengan role spesifik</p>
+					<p class="text-sm text-slate-500">Buat akun pengguna dengan endpoint POST /users/patient & POST /users/staff</p>
 				</div>
 			</div>
 
@@ -1038,7 +1305,7 @@
 					<div class="flex gap-3">
 						<span class="text-lg">⚠️</span>
 						<div>
-							<strong class="block font-semibold">Terdapat Kesalahan:</strong>
+							<strong class="block font-semibold">Terdapat Kesalahan Server / Backend:</strong>
 							<span class="mt-1 block">{addUserBackendError}</span>
 						</div>
 					</div>
@@ -1083,7 +1350,7 @@
 						onfocus={() => (isAddUserPasswordFocused = true)}
 						onblur={() => (isAddUserPasswordFocused = false)}
 						class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-						placeholder="Minimal 8 karakter"
+						placeholder="Minimal 6 karakter"
 					/>
 					{#if addUserForm.password.length > 0}
 						<span class="absolute top-10 right-3 text-sm">{isAddPasswordValid ? '✅' : '❌'}</span>
@@ -1096,7 +1363,7 @@
 						<p class="mb-1.5 font-medium text-slate-700">Syarat kata sandi:</p>
 						<ul class="space-y-1">
 							<li class="flex items-center gap-1.5 {isAddPwdLength ? 'text-green-600' : 'text-slate-500'}">
-								<span>{isAddPwdLength ? '✅' : '❌'}</span> Minimal 8 karakter
+								<span>{isAddPwdLength ? '✅' : '❌'}</span> Minimal 6 karakter
 							</li>
 							<li class="flex items-center gap-1.5 {isAddPwdUpper ? 'text-green-600' : 'text-slate-500'}">
 								<span>{isAddPwdUpper ? '✅' : '❌'}</span> Minimal 1 huruf kapital
@@ -1168,7 +1435,7 @@
 					</label>
 				</div>
 
-				<!-- Alamat (Textarea untuk Pasien, Option Select dari API/Data Departemen untuk Staff) -->
+				<!-- Alamat / Departemen -->
 				{#if addUserForm.role === 'pasien'}
 					<label class="relative block text-sm font-medium text-slate-700">
 						<span class="mb-2 block">{addressLabel}</span>
@@ -1182,11 +1449,11 @@
 						{/if}
 					</label>
 				{:else}
-					<!-- Interactive Department Selector (Anti-Human Error UI) -->
+					<!-- Interactive Department Selector -->
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium text-slate-700">
-								{addressLabel} <span class="font-bold text-indigo-600">(Pilih Departemen Tempat Kerja)</span>
+								{addressLabel} <span class="font-bold text-indigo-600">(Pilih Departemen Penugasan)</span>
 							</span>
 							{#if departments.length > 2}
 								<input
@@ -1202,11 +1469,13 @@
 						<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
 							{#each modalFilteredDepartments as dept}
 								{@const isSelected =
-									addUserForm.alamat === dept.alamat_departmen ||
-									addUserForm.alamat === dept.address}
+									addUserForm.departmenId === dept.id || addUserForm.departmenId === dept.id_departmen}
 								<button
 									type="button"
-									onclick={() => (addUserForm.alamat = dept.alamat_departmen || dept.address)}
+									onclick={() => {
+										addUserForm.departmenId = dept.id || dept.id_departmen || '';
+										addUserForm.alamat = dept.alamat_departmen || dept.address || '';
+									}}
 									class="relative flex flex-col justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 {isSelected
 										? 'border-indigo-600 bg-indigo-50/80 shadow-sm ring-2 ring-indigo-500/20'
 										: 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}"
@@ -1217,7 +1486,7 @@
 												? 'bg-indigo-600 text-white'
 												: 'border border-slate-200 bg-slate-100 text-slate-700'}"
 										>
-											{dept.kode_departmen}
+											{dept.kode_departmen || dept.departmen_code}
 										</span>
 										<div
 											class="flex h-5 w-5 items-center justify-center rounded-full text-xs transition {isSelected
@@ -1229,10 +1498,10 @@
 									</div>
 
 									<div class="mt-2">
-										<p class="text-sm font-bold leading-snug text-slate-900">{dept.nama_departmen}</p>
+										<p class="text-sm font-bold leading-snug text-slate-900">{dept.nama_departmen || dept.name}</p>
 										<p class="mt-1 flex items-start gap-1 text-xs leading-relaxed text-slate-500 line-clamp-2">
 											<span class="shrink-0 text-slate-400">📍</span>
-											<span>{dept.alamat_departmen}</span>
+											<span>{dept.alamat_departmen || dept.address}</span>
 										</p>
 									</div>
 								</button>
@@ -1258,9 +1527,9 @@
 										>
 									</div>
 									<p class="mt-0.5 font-bold text-indigo-800">
-										{selectedDept.nama_departmen} ({selectedDept.kode_departmen})
+										{selectedDept.nama_departmen || selectedDept.name} ({selectedDept.kode_departmen || selectedDept.departmen_code})
 									</p>
-									<p class="mt-0.5 text-slate-600">{selectedDept.alamat_departmen}</p>
+									<p class="mt-0.5 text-slate-600">{selectedDept.alamat_departmen || selectedDept.address}</p>
 								</div>
 							</div>
 						{:else}
@@ -1269,7 +1538,7 @@
 							>
 								<span class="text-base">⚠️</span>
 								<span class="font-medium"
-									>Silakan klik salah satu kartu departemen di atas untuk memilih alamat tempat kerja staf.</span
+									>Silakan klik salah satu kartu departemen di atas untuk memilih departemen tempat kerja staf.</span
 								>
 							</div>
 						{/if}
@@ -1291,7 +1560,7 @@
 							<span>{isAddEmailValid ? '✅' : '❌'}</span> Format email valid
 						</li>
 						<li class="flex items-center gap-2 {isAddPasswordValid ? 'text-green-600' : 'text-slate-500'}">
-							<span>{isAddPasswordValid ? '✅' : '❌'}</span> Kata sandi memenuhi syarat
+							<span>{isAddPasswordValid ? '✅' : '❌'}</span> Kata sandi memenuhi syarat (min 6 char)
 						</li>
 						<li class="flex items-center gap-2 {isAddConfirmValid ? 'text-green-600' : 'text-slate-500'}">
 							<span>{isAddConfirmValid ? '✅' : '❌'}</span> Konfirmasi sandi cocok
@@ -1330,6 +1599,145 @@
 					</button>
 				</div>
 			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================= -->
+<!-- MODAL: DETAIL USER SPECIFIC (GET /users/:id) -->
+<!-- ========================================= -->
+{#if showUserDetailModal}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"
+		onclick={(e) => { if (e.target === e.currentTarget) closeUserDetailModal(); }}
+		onkeydown={(e) => { if (e.key === 'Escape') closeUserDetailModal(); }}
+		role="dialog"
+		tabindex="-1"
+		aria-modal="true"
+		aria-label="Detail spesifik akun user"
+	>
+		<div
+			class="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl sm:p-8"
+		>
+			<!-- Close Button -->
+			<button
+				onclick={closeUserDetailModal}
+				class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+				aria-label="Tutup modal"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+				</svg>
+			</button>
+
+			<!-- Header -->
+			<div class="mb-6 flex items-center gap-3">
+				<div class="rounded-2xl bg-sky-100 p-3 text-sky-700">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+					</svg>
+				</div>
+				<div>
+					<h2 class="text-xl font-bold text-slate-900">Detail Spesifik Akun User</h2>
+					<p class="text-sm text-slate-500">Data diambil langsung via endpoint GET /users/:id</p>
+				</div>
+			</div>
+
+			{#if isFetchingUserDetail}
+				<div class="py-12 text-center">
+					<div class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+					<p class="mt-3 text-sm font-semibold text-slate-500">Mengambil data spesifik dari endpoint GET /users/:id...</p>
+				</div>
+			{:else if selectedUserDetail}
+				<div class="space-y-4">
+					<!-- ID Primary & Display Badge -->
+					<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+						<div class="flex items-center justify-between">
+							<span class="text-xs font-semibold text-slate-500">User Primary ID (DB)</span>
+							<span class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(selectedUserDetail.role)}">
+								{getRoleLabel(selectedUserDetail.role)}
+							</span>
+						</div>
+						<p class="mt-1 font-mono text-sm font-bold text-indigo-600 select-all">{selectedUserDetail.id}</p>
+
+						{#if selectedUserDetail.patientUser?.medical_record_number}
+							<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+								<span class="text-xs font-medium text-slate-500">No. Rekam Medis (MRN)</span>
+								<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.patientUser.medical_record_number}</span>
+							</div>
+						{/if}
+
+						{#if selectedUserDetail.employeeUser?.staff_code}
+							<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+								<span class="text-xs font-medium text-slate-500">Kode Staff / Pegawai</span>
+								<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.employeeUser.staff_code}</span>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Details Grid -->
+					<div class="grid gap-3 sm:grid-cols-2">
+						<div class="rounded-xl border border-slate-200/70 p-3">
+							<span class="text-xs font-medium text-slate-500">Nama Lengkap</span>
+							<p class="font-bold text-slate-900">{selectedUserDetail.name}</p>
+						</div>
+						<div class="rounded-xl border border-slate-200/70 p-3">
+							<span class="text-xs font-medium text-slate-500">Email</span>
+							<p class="font-bold text-slate-900 truncate">{selectedUserDetail.email}</p>
+						</div>
+						<div class="rounded-xl border border-slate-200/70 p-3">
+							<span class="text-xs font-medium text-slate-500">Nomor Telepon</span>
+							<p class="font-bold text-slate-900">{selectedUserDetail.phone || '-'}</p>
+						</div>
+						<div class="rounded-xl border border-slate-200/70 p-3">
+							<span class="text-xs font-medium text-slate-500">Status Akun</span>
+							<p class={`font-bold ${selectedUserDetail.is_active ? 'text-emerald-600' : 'text-rose-600'}`}>
+								{selectedUserDetail.is_active ? 'Aktif' : 'Non-Aktif'}
+							</p>
+						</div>
+					</div>
+
+					{#if selectedUserDetail.employeeUser?.departmen}
+						<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+							<span class="text-xs font-medium text-indigo-700">Departemen Penugasan</span>
+							<p class="font-bold text-indigo-950">
+								{selectedUserDetail.employeeUser.departmen.name} ({selectedUserDetail.employeeUser.departmen.departmen_code})
+							</p>
+							<p class="mt-0.5 text-xs text-slate-600">{selectedUserDetail.employeeUser.departmen.address}</p>
+						</div>
+					{/if}
+
+					<div class="rounded-xl border border-slate-200/70 p-3">
+						<span class="text-xs font-medium text-slate-500">Alamat</span>
+						<p class="text-sm font-semibold text-slate-800">{selectedUserDetail.address || '-'}</p>
+					</div>
+
+					<!-- Action Controls -->
+					<div class="flex gap-3 pt-4">
+						<button
+							type="button"
+							onclick={closeUserDetailModal}
+							class="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+						>
+							Tutup
+						</button>
+						<button
+							type="button"
+							onclick={async () => {
+								if (selectedUserDetail) {
+									await handleToggleUserStatus(selectedUserDetail);
+									closeUserDetailModal();
+								}
+							}}
+							class={`flex-1 rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-md transition ${selectedUserDetail.is_active ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+						>
+							{selectedUserDetail.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Akun'}
+						</button>
+					</div>
+				</div>
+			{:else}
+				<div class="py-6 text-center text-slate-500">Data detail user tidak dapat dimuat.</div>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -1408,6 +1816,17 @@
 					{#if deptForm.name.length > 0}
 						<span class="absolute top-10 right-3 text-sm">{isDeptNameValid ? '✅' : '❌'}</span>
 					{/if}
+				</label>
+
+				<!-- Kota / Cabang -->
+				<label class="relative block text-sm font-medium text-slate-700">
+					<span class="mb-2 block">Kota / Cabang</span>
+					<input
+						bind:value={deptForm.city}
+						type="text"
+						class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+						placeholder="Jakarta, Surabaya, Bandung..."
+					/>
 				</label>
 
 				<!-- Alamat Departemen -->
