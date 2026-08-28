@@ -8,6 +8,7 @@ export interface Department {
 	city?: string;
 	cabang?: string;
 	employee_count?: number;
+	is_active?: boolean;
 	// Property aliases for full backwards compatibility across UI components
 	id_departmen?: string;
 	kode_departmen?: string;
@@ -64,6 +65,7 @@ function normalizeDepartment(item: any): Department {
 	const rawCode = item.departmen_code || item.kode_departmen || item.code || '';
 	const rawAddress = item.address || item.alamat_departmen || '';
 	const rawCity = item.city || item.cabang || '';
+	const is_active = typeof item.is_active === 'boolean' ? item.is_active : true;
 
 	const name = unescapeHtml(rawName);
 	const departmen_code = unescapeHtml(rawCode);
@@ -82,7 +84,8 @@ function normalizeDepartment(item: any): Department {
 		alamat_departmen: address,
 		city,
 		cabang: city,
-		employee_count
+		employee_count,
+		is_active
 	};
 }
 
@@ -95,7 +98,7 @@ let meta = $state<MetaPagination | null>(null);
 /**
  * GET /departments — Fetch all departments
  */
-export async function fetchDepartments(params?: { search?: string; page?: number; limit?: number }) {
+export async function fetchDepartments(params?: { search?: string; page?: number; limit?: number; is_active?: string }) {
 	isLoading = true;
 	error = null;
 
@@ -104,6 +107,7 @@ export async function fetchDepartments(params?: { search?: string; page?: number
 		if (params?.search) query.set('search', params.search);
 		if (params?.page) query.set('page', String(params.page));
 		if (params?.limit) query.set('limit', String(params.limit));
+		if (params?.is_active !== undefined) query.set('is_active', params.is_active);
 
 		const queryString = query.toString() ? `?${query.toString()}` : '';
 		const response = await api.get<DepartmentListResponse>(`/departments${queryString}`);
@@ -143,7 +147,7 @@ export async function getDepartmentById(id: string): Promise<Department | null> 
 /**
  * POST /departments — Create a new department
  */
-export async function createDepartment(payload: { name: string; departmen_code: string; address: string; city?: string; cabang?: string }) {
+export async function createDepartment(payload: { name: string; departmen_code: string; address: string; city?: string; cabang?: string; is_active?: boolean }) {
 	isLoading = true;
 	error = null;
 
@@ -168,7 +172,8 @@ export async function createDepartment(payload: { name: string; departmen_code: 
 				departmen_code: payload.departmen_code.toUpperCase(),
 				address: payload.address,
 				city: payload.city || payload.cabang,
-				employee_count: 0
+				employee_count: 0,
+				is_active: payload.is_active ?? true
 			});
 			departmentsList = [newDept, ...departmentsList];
 			error = null;
@@ -183,7 +188,7 @@ export async function createDepartment(payload: { name: string; departmen_code: 
 /**
  * PATCH /departments/:id — Update existing department
  */
-export async function updateDepartment(id: string, payload: { name?: string; departmen_code?: string; address?: string; city?: string; cabang?: string }) {
+export async function updateDepartment(id: string, payload: { name?: string; departmen_code?: string; address?: string; city?: string; cabang?: string; is_active?: boolean }) {
 	isLoading = true;
 	error = null;
 
@@ -207,7 +212,8 @@ export async function updateDepartment(id: string, payload: { name?: string; dep
 					name: payload.name ?? d.name,
 					departmen_code: payload.departmen_code ? payload.departmen_code.toUpperCase() : d.departmen_code,
 					address: payload.address ?? d.address,
-					city: payload.city ?? payload.cabang ?? d.city
+					city: payload.city ?? payload.cabang ?? d.city,
+					is_active: payload.is_active ?? d.is_active
 				});
 			}
 			return d;
@@ -222,21 +228,26 @@ export async function updateDepartment(id: string, payload: { name?: string; dep
 }
 
 /**
- * DELETE /departments/:id — Delete a department by ID
+ * DELETE /departments/:id — Soft delete / deactivate a department by ID
  */
 export async function deleteDepartment(id: string) {
 	isLoading = true;
 	error = null;
 
 	try {
-		await api.delete<DepartmentSingleResponse>(`/departments/${id}`);
-		departmentsList = departmentsList.filter((d) => d.id !== id && d.id_departmen !== id);
+		const response = await api.delete<DepartmentSingleResponse>(`/departments/${id}`);
+		if (response && response.data) {
+			const updated = normalizeDepartment(response.data);
+			departmentsList = departmentsList.map((d) => (d.id === id || d.id_departmen === id ? updated : d));
+		} else {
+			departmentsList = departmentsList.map((d) => (d.id === id || d.id_departmen === id ? { ...d, is_active: false } : d));
+		}
 		return true;
 	} catch (err: any) {
-		const msg = err?.response?.message || err?.message || 'Gagal menghapus departemen';
+		const msg = err?.response?.message || err?.message || 'Gagal menonaktifkan departemen';
 		error = Array.isArray(msg) ? msg.join(', ') : msg;
 		console.warn(`DELETE /departments/${id} failed:`, error);
-		departmentsList = departmentsList.filter((d) => d.id !== id && d.id_departmen !== id);
+		departmentsList = departmentsList.map((d) => (d.id === id || d.id_departmen === id ? { ...d, is_active: false } : d));
 		return true;
 	} finally {
 		isLoading = false;

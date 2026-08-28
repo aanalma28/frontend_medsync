@@ -7,13 +7,13 @@
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import { departmentStore } from '$lib/stores/department.svelte';
-	import { userStore, type UserItem } from '$lib/stores/user.svelte';
+	import { userStore, type UserItem, type UpdateUserPayload } from '$lib/stores/user.svelte';
 
-	type DashboardUser = { role: string; name: string; id: string };
+	type DashboardUser = { role: string; name: string; id: string; user_code?: string };
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
-	let currentUser = $state<DashboardUser>({ role: 'superadmin', name: '', id: '' });
+	let currentUser = $state<DashboardUser>({ role: 'superadmin', name: '', id: '', user_code: '' });
 
 	onMount(async () => {
 		try {
@@ -45,7 +45,7 @@
 	// --- DATA USERS DARI BACKEND SERVICE (/users) ---
 	let allAccounts = $derived(userStore.list);
 
-	// Role filter for the account management table
+	// Role & Status filters for the account management table
 	let selectedRoleFilter = $state('semua');
 	const roleOptions = [
 		{ value: 'semua', label: 'Semua Role' },
@@ -56,11 +56,43 @@
 		{ value: 'pasien', label: 'Pasien' }
 	];
 
-	let filteredAccounts = $derived(
-		selectedRoleFilter === 'semua'
-			? allAccounts
-			: allAccounts.filter((a) => a.role === selectedRoleFilter)
-	);
+	let selectedStatusFilter = $state<'semua' | 'aktif' | 'nonaktif'>('semua');
+	const statusOptions = [
+		{ value: 'semua', label: 'Semua Status' },
+		{ value: 'aktif', label: '✅ Aktif' },
+		{ value: 'nonaktif', label: '❌ Non-Aktif' }
+	];
+
+	let filteredAccounts = $derived.by(() => {
+		// 1. Filter berdasarkan Role & Status
+		const filtered = allAccounts.filter((a) => {
+			const matchesRole = selectedRoleFilter === 'semua' || a.role === selectedRoleFilter;
+			const matchesStatus =
+				selectedStatusFilter === 'semua'
+					? true
+					: selectedStatusFilter === 'aktif'
+						? a.is_active
+						: !a.is_active;
+			return matchesRole && matchesStatus;
+		});
+
+		// 2. Urutkan: Aktif duluan, kemudian berdasarkan tanggal pembuatan (createdAt) terbaru
+		return filtered.slice().sort((a, b) => {
+			// Prioritas 1: User Aktif (true) mendahului Non-aktif (false)
+			if (a.is_active !== b.is_active) {
+				return a.is_active ? -1 : 1;
+			}
+
+			// Prioritas 2: Tanggal pembuatan (createdAt) terbaru (descending)
+			const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+			const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+			if (timeA !== timeB) {
+				return timeB - timeA;
+			}
+
+			return (b.id || '').localeCompare(a.id || '');
+		});
+	});
 
 	// Helper to display role badge styling
 	function getRoleBadgeClass(role: string): string {
@@ -268,19 +300,79 @@
 	}
 
 	// =============================================
-	// GET SPECIFIC USER DETAIL MODAL (GET /users/:id)
+	// GET SPECIFIC USER DETAIL & EDIT MODAL
 	// =============================================
 	let showUserDetailModal = $state(false);
 	let isFetchingUserDetail = $state(false);
 	let selectedUserDetail = $state<UserItem | null>(null);
 
-	async function openUserDetail(id: string) {
+	let isEditUserMode = $state(false);
+	let isEditUserSubmitting = $state(false);
+	let editUserBackendError = $state<string | null>(null);
+
+	let editDeptSearch = $state('');
+
+	let editUserForm = $state({
+		name: '',
+		email: '',
+		password: '',
+		phone: '',
+		birthDate: '',
+		address: '',
+		departmenId: '',
+		is_active: true
+	});
+
+	// Derived validation rules for Edit User Form
+	let isEditNameValid = $derived(editUserForm.name.trim().length >= 3 && editUserForm.name.trim().length <= 100);
+	let isEditEmailValid = $derived(
+		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editUserForm.email.trim()) && editUserForm.email.trim().length <= 100
+	);
+	let isEditPasswordValid = $derived(
+		editUserForm.password.trim() === '' ||
+			(editUserForm.password.trim().length >= 6 && editUserForm.password.trim().length <= 128)
+	);
+	let isEditPhoneValid = $derived(
+		editUserForm.phone.trim() === '' ||
+			/^(\+62|62|08)[0-9]{8,13}$/.test(editUserForm.phone.replace(/[\s-]/g, ''))
+	);
+	let isEditBirthDateValid = $derived(() => {
+		if (!editUserForm.birthDate) return true;
+		const birth = new Date(editUserForm.birthDate);
+		if (isNaN(birth.getTime())) return false;
+		const today = new Date();
+		let age = today.getFullYear() - birth.getFullYear();
+		const monthDiff = today.getMonth() - birth.getMonth();
+		if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+		return age >= 1 && age <= 120;
+	});
+	let isEditAddressValid = $derived(
+		selectedUserDetail?.role === 'pasien'
+			? editUserForm.address.trim().length === 0 || editUserForm.address.trim().length >= 10
+			: Boolean(editUserForm.departmenId)
+	);
+	let isEditFormValid = $derived(
+		isEditNameValid &&
+			isEditEmailValid &&
+			isEditPasswordValid &&
+			isEditPhoneValid &&
+			isEditBirthDateValid() &&
+			isEditAddressValid
+	);
+
+	async function openUserDetail(id: string, autoEdit = false) {
 		isFetchingUserDetail = true;
 		showUserDetailModal = true;
 		selectedUserDetail = null;
+		isEditUserMode = false;
+		editUserBackendError = null;
+
 		try {
 			const detail = await userStore.getUserById(id);
 			selectedUserDetail = detail;
+			if (autoEdit && detail) {
+				startEditingUser();
+			}
 		} catch (err) {
 			console.error('Gagal mengambil detail user:', err);
 		} finally {
@@ -291,6 +383,82 @@
 	function closeUserDetailModal() {
 		showUserDetailModal = false;
 		selectedUserDetail = null;
+		isEditUserMode = false;
+		editUserBackendError = null;
+	}
+
+	function startEditingUser() {
+		if (!selectedUserDetail) return;
+		let defaultDeptId = selectedUserDetail.employeeUser?.departmen_id || '';
+		if (!defaultDeptId && selectedUserDetail.employeeUser?.departmen?.id) {
+			defaultDeptId = selectedUserDetail.employeeUser.departmen.id;
+		}
+
+		editUserForm = {
+			name: selectedUserDetail.name || '',
+			email: selectedUserDetail.email || '',
+			password: '',
+			phone: selectedUserDetail.phone || '',
+			birthDate: selectedUserDetail.birth_date ? selectedUserDetail.birth_date.split('T')[0] : '',
+			address: selectedUserDetail.address || '',
+			departmenId: defaultDeptId,
+			is_active: selectedUserDetail.is_active ?? true
+		};
+		editDeptSearch = '';
+		editUserBackendError = null;
+		isEditUserMode = true;
+	}
+
+	function cancelEditingUser() {
+		isEditUserMode = false;
+		editUserBackendError = null;
+	}
+
+	async function handleSaveUserEdit(event: Event) {
+		event.preventDefault();
+		if (!selectedUserDetail || isEditUserSubmitting || !isEditFormValid) return;
+
+		isEditUserSubmitting = true;
+		editUserBackendError = null;
+
+		try {
+			const payload: UpdateUserPayload = {
+				name: editUserForm.name.trim(),
+				email: editUserForm.email.trim(),
+				phone: editUserForm.phone.trim() || undefined,
+				address: editUserForm.address.trim() || undefined,
+				birth_date: editUserForm.birthDate || undefined,
+				is_active: editUserForm.is_active
+			};
+
+			if (editUserForm.password.trim().length > 0) {
+				if (editUserForm.password.trim().length < 6) {
+					throw new Error('Password baru minimal 6 karakter');
+				}
+				payload.password = editUserForm.password.trim();
+			}
+
+			if (selectedUserDetail.employeeUser && editUserForm.departmenId) {
+				payload.departmen_id = editUserForm.departmenId;
+			}
+
+			await userStore.updateUser(selectedUserDetail.id, payload);
+			
+			// Refresh list & single item detail
+			await userStore.fetchUsers();
+			const updatedDetail = await userStore.getUserById(selectedUserDetail.id);
+			if (updatedDetail) {
+				selectedUserDetail = updatedDetail;
+			}
+
+			alert('Data user berhasil diperbarui!');
+			isEditUserMode = false;
+		} catch (err: any) {
+			console.error('Gagal mengedit user:', err);
+			editUserBackendError = err?.message || 'Gagal memperbarui data user.';
+		} finally {
+			isEditUserSubmitting = false;
+		}
 	}
 
 	async function handleToggleUserStatus(account: UserItem) {
@@ -327,8 +495,25 @@
 			(d) => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId
 		)
 	);
+	let editModalFilteredDepartments = $derived(
+		editDeptSearch.trim() === ''
+			? departments
+			: departments.filter(
+					(d) =>
+						(d.kode_departmen || d.departmen_code || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
+						(d.nama_departmen || d.name || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
+						(d.city || d.cabang || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
+						(d.alamat_departmen || d.address || '').toLowerCase().includes(editDeptSearch.toLowerCase())
+				)
+	);
+	let selectedEditDept = $derived(
+		departments.find(
+			(d) => d.id === editUserForm.departmenId || d.id_departmen === editUserForm.departmenId
+		)
+	);
 
 	let deptSearchQuery = $state('');
+	let deptStatusFilter = $state<'all' | 'active' | 'inactive'>('all');
 	let showDeptModal = $state(false);
 	let isEditDept = $state(false);
 	let editingDeptId = $state<string | null>(null);
@@ -339,11 +524,9 @@
 		code: '',
 		name: '',
 		city: '',
-		address: ''
+		address: '',
+		is_active: true
 	});
-
-	let showDeleteDeptModal = $state(false);
-	let deletingDept = $state<{ id: string; name: string } | null>(null);
 
 	let isDeptCodeValid = $derived(
 		/^[A-Za-z0-9_-]{2,50}$/.test(deptForm.code.trim())
@@ -360,31 +543,46 @@
 	);
 
 	let filteredDepartments = $derived(
-		deptSearchQuery.trim() === ''
-			? departments
-			: departments.filter(
-					(d) =>
-						(d.departmen_code || d.kode_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-						(d.name || d.nama_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-						(d.city || d.cabang || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-						(d.address || d.alamat_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase())
-				)
+		departments
+			.filter((d) => {
+				const matchesSearch =
+					deptSearchQuery.trim() === '' ||
+					(d.departmen_code || d.kode_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
+					(d.name || d.nama_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
+					(d.city || d.cabang || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
+					(d.address || d.alamat_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase());
+
+				const isDeptActive = d.is_active !== false;
+				const matchesStatus =
+					deptStatusFilter === 'all' ||
+					(deptStatusFilter === 'active' && isDeptActive) ||
+					(deptStatusFilter === 'inactive' && !isDeptActive);
+
+				return matchesSearch && matchesStatus;
+			})
+			.sort((a, b) => {
+				const aActive = a.is_active !== false ? 1 : 0;
+				const bActive = b.is_active !== false ? 1 : 0;
+				if (aActive !== bActive) return bActive - aActive;
+				return (a.name || '').localeCompare(b.name || '');
+			})
 	);
 
 	function openAddDeptModal() {
-		deptForm = { code: '', name: '', city: '', address: '' };
+		deptForm = { code: '', name: '', city: '', address: '', is_active: true };
 		isEditDept = false;
 		editingDeptId = null;
 		deptModalError = null;
 		showDeptModal = true;
 	}
 
-	function openEditDeptModal(dept: { id: string; id_departmen?: string; code?: string; departmen_code?: string; kode_departmen?: string; name?: string; nama_departmen?: string; city?: string; cabang?: string; address?: string; alamat_departmen?: string }) {
+	function openEditDeptModal(dept: { id: string; id_departmen?: string; code?: string; departmen_code?: string; kode_departmen?: string; name?: string; nama_departmen?: string; city?: string; cabang?: string; address?: string; alamat_departmen?: string; is_active?: boolean }) {
 		deptForm = {
 			code: dept.departmen_code || dept.kode_departmen || dept.code || '',
 			name: dept.name || dept.nama_departmen || '',
 			city: dept.city || dept.cabang || '',
-			address: dept.address || dept.alamat_departmen || ''
+			address: dept.address || dept.alamat_departmen || '',
+			is_active: dept.is_active !== false
 		};
 		isEditDept = true;
 		editingDeptId = dept.id || dept.id_departmen || '';
@@ -416,7 +614,8 @@
 					name: cleanName,
 					city: cleanCity || undefined,
 					cabang: cleanCity || undefined,
-					address: cleanAddress
+					address: cleanAddress,
+					is_active: deptForm.is_active
 				});
 			} else {
 				await departmentStore.createDepartment({
@@ -424,7 +623,8 @@
 					name: cleanName,
 					city: cleanCity || undefined,
 					cabang: cleanCity || undefined,
-					address: cleanAddress
+					address: cleanAddress,
+					is_active: deptForm.is_active
 				});
 			}
 			closeDeptModal();
@@ -436,24 +636,31 @@
 		}
 	}
 
-	function openDeleteDeptModal(dept: { id: string; id_departmen?: string; name?: string; nama_departmen?: string }) {
-		deletingDept = { id: dept.id || dept.id_departmen || '', name: dept.nama_departmen || dept.name || '' };
-		showDeleteDeptModal = true;
-	}
+	async function handleToggleDeptStatus(dept: { id: string; id_departmen?: string; is_active?: boolean; name?: string; nama_departmen?: string }) {
+		const deptId = dept.id || dept.id_departmen || '';
+		if (!deptId || isDeptSubmitting) return;
 
-	async function confirmDeleteDept() {
-		if (deletingDept && !isDeptSubmitting) {
-			isDeptSubmitting = true;
-			try {
-				await departmentStore.deleteDepartment(deletingDept.id);
-			} catch (err) {
-				console.error('Gagal menghapus departemen:', err);
-			} finally {
-				isDeptSubmitting = false;
-				deletingDept = null;
-			}
+		const currentlyActive = dept.is_active !== false;
+		const actionText = currentlyActive ? 'menonaktifkan' : 'mengaktifkan';
+		const deptName = dept.nama_departmen || dept.name || 'Departemen';
+
+		if (!confirm(`Apakah Anda yakin ingin ${actionText} departemen "${deptName}"?`)) {
+			return;
 		}
-		showDeleteDeptModal = false;
+
+		isDeptSubmitting = true;
+		try {
+			if (currentlyActive) {
+				await departmentStore.deleteDepartment(deptId);
+			} else {
+				await departmentStore.updateDepartment(deptId, { is_active: true });
+			}
+		} catch (err: any) {
+			console.error(`Gagal ${actionText} departemen:`, err);
+			alert(err?.message || `Gagal ${actionText} departemen.`);
+		} finally {
+			isDeptSubmitting = false;
+		}
 	}
 </script>
 
@@ -499,7 +706,7 @@
 					>
 				</button>
 				<div class="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white">
-					Superadmin: {currentUser.id}
+					Superadmin: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
@@ -633,11 +840,19 @@
 											<h3 class="font-bold text-slate-800">{dept.name || dept.nama_departmen}</h3>
 											<p class="text-xs text-slate-500">Kode: {dept.departmen_code || dept.kode_departmen}</p>
 										</div>
-										<span
-											class="rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black tracking-wider text-emerald-700 uppercase"
-										>
-											Operasional
-										</span>
+										{#if dept.is_active !== false}
+											<span
+												class="rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black tracking-wider text-emerald-700 uppercase"
+											>
+												Aktif
+											</span>
+										{:else}
+											<span
+												class="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black tracking-wider text-slate-600 uppercase"
+											>
+												Non-Aktif
+											</span>
+										{/if}
 									</li>
 								{/each}
 							</ul>
@@ -654,16 +869,29 @@
 									Kelola seluruh akun pengguna di semua role dalam sistem MedSync.
 								</p>
 							</div>
-							<div class="flex items-center gap-3">
+							<div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
+								<!-- Filter Role -->
 								<select
 									bind:value={selectedRoleFilter}
-									class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-sm font-semibold text-slate-700 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+									class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 pr-9 text-sm font-semibold text-slate-700 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
 									style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em;"
 								>
 									{#each roleOptions as opt}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</select>
+
+								<!-- Filter Status -->
+								<select
+									bind:value={selectedStatusFilter}
+									class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 pr-9 text-sm font-semibold text-slate-700 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+									style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em;"
+								>
+									{#each statusOptions as sOpt}
+										<option value={sOpt.value}>{sOpt.label}</option>
+									{/each}
+								</select>
+
 								<button
 									onclick={openAddUserModal}
 									class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
@@ -769,10 +997,10 @@
 									</div>
 
 									<!-- Card Footer: Action Buttons Grid -->
-									<div class="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+									<div class="grid grid-cols-3 gap-1.5 border-t border-slate-100 pt-3">
 										<button
-											onclick={() => openUserDetail(account.id)}
-											class="flex items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 transition active:scale-95 hover:bg-sky-100"
+											onclick={() => openUserDetail(account.id, false)}
+											class="flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2 text-xs font-bold text-sky-700 transition active:scale-95 hover:bg-sky-100"
 										>
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
@@ -793,13 +1021,22 @@
 													d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
 												/>
 											</svg>
-											<span>Detail / Edit</span>
+											<span>Detail</span>
+										</button>
+										<button
+											onclick={() => openUserDetail(account.id, true)}
+											class="flex items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-bold text-indigo-700 transition active:scale-95 hover:bg-indigo-100"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+											</svg>
+											<span>Edit</span>
 										</button>
 
 										{#if account.is_active}
 											<button
 												onclick={() => handleToggleUserStatus(account)}
-												class="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
+												class="flex items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
 											>
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
@@ -815,12 +1052,12 @@
 														d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
 													/>
 												</svg>
-												<span>Nonaktifkan</span>
+												<span>Nonaktif</span>
 											</button>
 										{:else}
 											<button
 												onclick={() => handleToggleUserStatus(account)}
-												class="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
+												class="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
 											>
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
@@ -899,9 +1136,9 @@
 											<td class="px-4 py-3.5 text-right whitespace-nowrap">
 												<div class="inline-flex items-center justify-end gap-2">
 													<button
-														onclick={() => openUserDetail(account.id)}
+														onclick={() => openUserDetail(account.id, false)}
 														class="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-500/20 shadow-2xs"
-														title="Lihat Detail & Edit Akun"
+														title="Lihat Detail Akun"
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"
@@ -922,7 +1159,17 @@
 																d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
 															/>
 														</svg>
-														<span>Detail / Edit</span>
+														<span>Detail</span>
+													</button>
+													<button
+														onclick={() => openUserDetail(account.id, true)}
+														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+														title="Edit Data User"
+													>
+														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+															<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+														</svg>
+														<span>Edit</span>
 													</button>
 
 													{#if account.is_active}
@@ -998,6 +1245,16 @@
 								</p>
 							</div>
 							<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+								<!-- Dropdown Filter Status Departemen -->
+								<select
+									bind:value={deptStatusFilter}
+									class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+								>
+									<option value="all">Semua Status</option>
+									<option value="active">Aktif Sahaja</option>
+									<option value="inactive">Non-Aktif Sahaja</option>
+								</select>
+								<!-- Search Input -->
 								<div class="relative">
 									<input
 										type="text"
@@ -1035,13 +1292,13 @@
 								<p class="text-xs font-semibold text-slate-500">Total Departemen</p>
 								<p class="mt-1 text-2xl font-black text-slate-900">{departments.length}</p>
 							</div>
-							<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
-								<p class="text-xs font-semibold text-indigo-700">Hasil Pencarian</p>
-								<p class="mt-1 text-2xl font-black text-indigo-900">{filteredDepartments.length}</p>
-							</div>
 							<div class="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-								<p class="text-xs font-semibold text-emerald-700">Status Layanan</p>
-								<p class="mt-1 text-2xl font-black text-emerald-900">Aktif & Operasional</p>
+								<p class="text-xs font-semibold text-emerald-700">Departemen Aktif</p>
+								<p class="mt-1 text-2xl font-black text-emerald-900">{departments.filter((d) => d.is_active !== false).length}</p>
+							</div>
+							<div class="rounded-xl border border-slate-200 bg-slate-100 p-4">
+								<p class="text-xs font-semibold text-slate-600">Departemen Non-Aktif</p>
+								<p class="mt-1 text-2xl font-black text-slate-700">{departments.filter((d) => d.is_active === false).length}</p>
 							</div>
 						</div>
 
@@ -1053,9 +1310,15 @@
 										<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700">
 											{dept.departmen_code || dept.kode_departmen}
 										</span>
-										<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-											Operasional
-										</span>
+										{#if dept.is_active !== false}
+											<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Aktif
+											</span>
+										{:else}
+											<span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">
+												<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span> Non-Aktif
+											</span>
+										{/if}
 									</div>
 									<div class="my-3 space-y-1">
 										<h3 class="font-bold text-slate-900 text-sm">{dept.nama_departmen || dept.name}</h3>
@@ -1082,15 +1345,28 @@
 											</svg>
 											<span>Edit</span>
 										</button>
-										<button
-											onclick={() => openDeleteDeptModal(dept)}
-											class="flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition active:scale-95 hover:bg-rose-100"
-										>
-											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-												<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-											</svg>
-											<span>Hapus</span>
-										</button>
+
+										{#if dept.is_active !== false}
+											<button
+												onclick={() => handleToggleDeptStatus(dept)}
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+													<path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+												</svg>
+												<span>Nonaktifkan</span>
+											</button>
+										{:else}
+											<button
+												onclick={() => handleToggleDeptStatus(dept)}
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+													<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+												</svg>
+												<span>Aktifkan</span>
+											</button>
+										{/if}
 									</div>
 								</div>
 							{/each}
@@ -1104,13 +1380,14 @@
 										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap">Kode Departemen</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Nama Departemen</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Cabang / Kota</th>
+										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Status</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Alamat Departemen</th>
 										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap">Aksi</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredDepartments as dept}
-										<tr class="transition hover:bg-slate-50/80">
+										<tr class="transition hover:bg-slate-50/80 {dept.is_active === false ? 'bg-slate-50/40 opacity-75' : ''}">
 											<td class="px-4 py-3.5 whitespace-nowrap">
 												<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
 													{dept.departmen_code || dept.kode_departmen}
@@ -1118,6 +1395,19 @@
 											</td>
 											<td class="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{dept.nama_departmen || dept.name}</td>
 											<td class="px-4 py-3.5 font-semibold text-indigo-900 whitespace-nowrap">{dept.city || dept.cabang || '-'}</td>
+											<td class="px-4 py-3.5 whitespace-nowrap">
+												{#if dept.is_active !== false}
+													<span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+														<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+														Aktif
+													</span>
+												{:else}
+													<span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+														<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+														Non-Aktif
+													</span>
+												{/if}
+											</td>
 											<td class="max-w-xs truncate px-4 py-3.5 text-slate-600">{dept.alamat_departmen || dept.address}</td>
 											<td class="px-4 py-3.5 text-right whitespace-nowrap">
 												<div class="inline-flex items-center justify-end gap-2">
@@ -1131,16 +1421,30 @@
 														</svg>
 														<span>Edit</span>
 													</button>
-													<button
-														onclick={() => openDeleteDeptModal(dept)}
-														class="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500/20 shadow-2xs"
-														title="Hapus Departemen"
-													>
-														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-															<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-														</svg>
-														<span>Hapus</span>
-													</button>
+
+													{#if dept.is_active !== false}
+														<button
+															onclick={() => handleToggleDeptStatus(dept)}
+															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs"
+															title="Nonaktifkan Departemen"
+														>
+															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+																<path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+															</svg>
+															<span>Nonaktifkan</span>
+														</button>
+													{:else}
+														<button
+															onclick={() => handleToggleDeptStatus(dept)}
+															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-2xs"
+															title="Aktifkan Departemen"
+														>
+															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
+																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+															</svg>
+															<span>Aktifkan</span>
+														</button>
+													{/if}
 												</div>
 											</td>
 										</tr>
@@ -1151,7 +1455,7 @@
 							{#if filteredDepartments.length === 0}
 								<div class="py-12 text-center">
 									<p class="text-sm font-semibold text-slate-400">
-										Tidak ada departemen ditemukan.
+										Tidak ada departemen ditemukan untuk filter ini.
 									</p>
 								</div>
 							{/if}
@@ -1604,20 +1908,20 @@
 {/if}
 
 <!-- ========================================= -->
-<!-- MODAL: DETAIL USER SPECIFIC (GET /users/:id) -->
+<!-- MODAL: DETAIL & EDIT USER (GET & PATCH /users/:id) -->
 <!-- ========================================= -->
 {#if showUserDetailModal}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
 		onclick={(e) => { if (e.target === e.currentTarget) closeUserDetailModal(); }}
 		onkeydown={(e) => { if (e.key === 'Escape') closeUserDetailModal(); }}
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"
-		aria-label="Detail spesifik akun user"
+		aria-label="Detail & Edit akun user"
 	>
 		<div
-			class="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl sm:p-8"
+			class="relative my-auto max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl sm:p-8"
 		>
 			<!-- Close Button -->
 			<button
@@ -1632,14 +1936,24 @@
 
 			<!-- Header -->
 			<div class="mb-6 flex items-center gap-3">
-				<div class="rounded-2xl bg-sky-100 p-3 text-sky-700">
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-					</svg>
+				<div class="rounded-2xl {isEditUserMode ? 'bg-indigo-100 text-indigo-700' : 'bg-sky-100 text-sky-700'} p-3">
+					{#if isEditUserMode}
+						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+						</svg>
+					{/if}
 				</div>
 				<div>
-					<h2 class="text-xl font-bold text-slate-900">Detail Spesifik Akun User</h2>
-					<p class="text-sm text-slate-500">Data diambil langsung via endpoint GET /users/:id</p>
+					<h2 class="text-xl font-bold text-slate-900">
+						{isEditUserMode ? 'Edit Informasi User' : 'Detail Spesifik Akun User'}
+					</h2>
+					<p class="text-sm text-slate-500">
+						{isEditUserMode ? 'Perbarui data profil & akun user (PATCH /users/:id)' : 'Data diambil dari endpoint GET /users/:id'}
+					</p>
 				</div>
 			</div>
 
@@ -1649,92 +1963,382 @@
 					<p class="mt-3 text-sm font-semibold text-slate-500">Mengambil data spesifik dari endpoint GET /users/:id...</p>
 				</div>
 			{:else if selectedUserDetail}
-				<div class="space-y-4">
-					<!-- ID Primary & Display Badge -->
-					<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-						<div class="flex items-center justify-between">
-							<span class="text-xs font-semibold text-slate-500">User Primary ID (DB)</span>
+				{#if isEditUserMode}
+					<!-- ========================================= -->
+					<!-- EDIT FORM MODE -->
+					<!-- ========================================= -->
+					<form class="space-y-4" onsubmit={handleSaveUserEdit}>
+						{#if editUserBackendError}
+							<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
+								⚠️ {editUserBackendError}
+							</div>
+						{/if}
+
+						<!-- Role Info Tag -->
+						<div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-3">
+							<span class="text-xs font-semibold text-slate-500">Role Akun</span>
 							<span class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(selectedUserDetail.role)}">
 								{getRoleLabel(selectedUserDetail.role)}
 							</span>
 						</div>
-						<p class="mt-1 font-mono text-sm font-bold text-indigo-600 select-all">{selectedUserDetail.id}</p>
 
-						{#if selectedUserDetail.patientUser?.medical_record_number}
-							<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
-								<span class="text-xs font-medium text-slate-500">No. Rekam Medis (MRN)</span>
-								<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.patientUser.medical_record_number}</span>
+						<!-- Nama Lengkap -->
+						<label class="relative block text-sm font-medium text-slate-700">
+							<span class="mb-1 block">Nama Lengkap</span>
+							<input
+								bind:value={editUserForm.name}
+								type="text"
+								required
+								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+								placeholder="Nama lengkap user"
+							/>
+							{#if editUserForm.name.length > 0}
+								<span class="absolute top-9 right-3 text-sm">{isEditNameValid ? '✅' : '❌'}</span>
+							{/if}
+						</label>
+
+						<!-- Email -->
+						<label class="relative block text-sm font-medium text-slate-700">
+							<span class="mb-1 block">Alamat Email</span>
+							<input
+								bind:value={editUserForm.email}
+								type="email"
+								required
+								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+								placeholder="email@domain.com"
+							/>
+							{#if editUserForm.email.length > 0}
+								<span class="absolute top-9 right-3 text-sm">{isEditEmailValid ? '✅' : '❌'}</span>
+							{/if}
+						</label>
+
+						<!-- Password Baru (Opsional) -->
+						<label class="relative block text-sm font-medium text-slate-700">
+							<span class="mb-1 block">Password Baru (Opsional)</span>
+							<input
+								bind:value={editUserForm.password}
+								type="password"
+								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+								placeholder="Kosongkan jika tidak ingin mengubah password"
+							/>
+							{#if editUserForm.password.length > 0}
+								<span class="absolute top-9 right-3 text-sm">{isEditPasswordValid ? '✅' : '❌'}</span>
+							{/if}
+							<span class="mt-1 block text-[11px] text-slate-400">Isi minimal 6 karakter hanya jika ingin mengganti password user.</span>
+						</label>
+
+						<!-- No HP & Tanggal Lahir -->
+						<div class="grid gap-3 sm:grid-cols-2">
+							<label class="relative block text-sm font-medium text-slate-700">
+								<span class="mb-1 block">Nomor Telepon</span>
+								<input
+									bind:value={editUserForm.phone}
+									type="tel"
+									class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+									placeholder="081234567890"
+								/>
+								{#if editUserForm.phone.length > 0}
+									<span class="absolute top-9 right-3 text-sm">{isEditPhoneValid ? '✅' : '❌'}</span>
+								{/if}
+							</label>
+
+							<label class="relative block text-sm font-medium text-slate-700">
+								<span class="mb-1 block">Tanggal Lahir</span>
+								<input
+									bind:value={editUserForm.birthDate}
+									type="date"
+									class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+								/>
+								{#if editUserForm.birthDate.length > 0}
+									<span class="absolute top-9 right-10 text-sm">{isEditBirthDateValid() ? '✅' : '❌'}</span>
+								{/if}
+							</label>
+						</div>
+
+						<!-- Status Akun (Aktif / Nonaktif) -->
+						<label class="block text-sm font-medium text-slate-700">
+							<span class="mb-1 block">Status Akun</span>
+							<select
+								bind:value={editUserForm.is_active}
+								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-semibold"
+							>
+								<option value={true}>✅ Aktif</option>
+								<option value={false}>❌ Non-Aktif (Di-deaktivasi)</option>
+							</select>
+						</label>
+
+						<!-- Alamat Tempat Tinggal / Departemen Penugasan -->
+						{#if selectedUserDetail.role === 'pasien'}
+							<label class="relative block text-sm font-medium text-slate-700">
+								<span class="mb-1 block">Alamat Tempat Tinggal (Pasien)</span>
+								<textarea
+									bind:value={editUserForm.address}
+									rows="3"
+									class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+									placeholder="Alamat lengkap tempat tinggal pasien..."
+								></textarea>
+								{#if editUserForm.address.length > 0}
+									<span class="absolute top-9 right-3 text-sm">{isEditAddressValid ? '✅' : '❌'}</span>
+								{/if}
+							</label>
+						{:else}
+							<!-- Interactive Department Selector (Identik dengan Create User) -->
+							<div class="space-y-3">
+								<div class="flex items-center justify-between">
+									<span class="text-sm font-medium text-slate-700">
+										Alamat / Departemen <span class="font-bold text-indigo-600">(Pilih Departemen Penugasan)</span>
+									</span>
+									{#if departments.length > 2}
+										<input
+											type="text"
+											bind:value={editDeptSearch}
+											placeholder="Cari departemen..."
+											class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs outline-none focus:border-indigo-500 focus:bg-white"
+										/>
+									{/if}
+								</div>
+
+								<!-- Grid Card Departemen -->
+								<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
+									{#each editModalFilteredDepartments as dept}
+										{@const isSelected =
+											editUserForm.departmenId === dept.id || editUserForm.departmenId === dept.id_departmen}
+										<button
+											type="button"
+											onclick={() => {
+												editUserForm.departmenId = dept.id || dept.id_departmen || '';
+												editUserForm.address = dept.alamat_departmen || dept.address || '';
+											}}
+											class="relative flex flex-col justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 {isSelected
+												? 'border-indigo-600 bg-indigo-50/80 shadow-sm ring-2 ring-indigo-500/20'
+												: 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}"
+										>
+											<div class="flex items-start justify-between gap-2">
+												<span
+													class="rounded-md px-2 py-0.5 text-[10px] font-extrabold tracking-wide uppercase {isSelected
+														? 'bg-indigo-600 text-white'
+														: 'border border-slate-200 bg-slate-100 text-slate-700'}"
+												>
+													{dept.kode_departmen || dept.departmen_code}
+												</span>
+												<div
+													class="flex h-5 w-5 items-center justify-center rounded-full text-xs transition {isSelected
+														? 'bg-indigo-600 text-white'
+														: 'border border-slate-300 text-transparent hover:border-slate-400'}"
+												>
+													✓
+												</div>
+											</div>
+
+											<div class="mt-2">
+												<p class="text-sm font-bold leading-snug text-slate-900">{dept.nama_departmen || dept.name}</p>
+												{#if dept.city || dept.cabang}
+													<p class="text-[11px] font-semibold text-indigo-600">Cabang {dept.city || dept.cabang}</p>
+												{/if}
+												<p class="mt-1 flex items-start gap-1 text-xs leading-relaxed text-slate-500 line-clamp-2">
+													<span class="shrink-0 text-slate-400">📍</span>
+													<span>{dept.alamat_departmen || dept.address}</span>
+												</p>
+											</div>
+										</button>
+									{/each}
+								</div>
+
+								<!-- Selected Department Confirmation Banner -->
+								{#if selectedEditDept}
+									<div
+										class="flex items-start gap-3 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 p-3.5 shadow-sm"
+									>
+										<div
+											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm"
+										>
+											🏢
+										</div>
+										<div class="flex-1 text-xs">
+											<div class="flex items-center justify-between">
+												<p class="font-bold text-indigo-950">Departemen Penugasan Terpilih</p>
+												<span
+													class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700"
+												>
+													{selectedEditDept.kode_departmen || selectedEditDept.departmen_code}
+												</span>
+											</div>
+											<p class="mt-0.5 font-semibold text-indigo-900">
+												{selectedEditDept.nama_departmen || selectedEditDept.name}
+												{#if selectedEditDept.city || selectedEditDept.cabang}
+													- Cabang {selectedEditDept.city || selectedEditDept.cabang}
+												{/if}
+											</p>
+											<p class="mt-0.5 text-slate-600">{selectedEditDept.alamat_departmen || selectedEditDept.address}</p>
+										</div>
+									</div>
+								{:else}
+									<div
+										class="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-800"
+									>
+										<span class="text-base">⚠️</span>
+										<span class="font-medium"
+											>Silakan klik salah satu kartu departemen di atas untuk memilih departemen tempat kerja staf.</span
+										>
+									</div>
+								{/if}
 							</div>
 						{/if}
 
-						{#if selectedUserDetail.employeeUser?.staff_code}
-							<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
-								<span class="text-xs font-medium text-slate-500">Kode Staff / Pegawai</span>
-								<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.employeeUser.staff_code}</span>
+						<!-- Validation Checklist Box -->
+						<div
+							class="rounded-2xl border {isEditFormValid
+								? 'border-green-300 bg-green-50/50'
+								: 'border-slate-200 bg-white/60'} p-4 text-sm transition-all"
+						>
+							<p class="mb-2 font-medium text-slate-700">Status Validasi Formulir Edit</p>
+							<ul class="grid gap-1.5 text-xs sm:grid-cols-2">
+								<li class="flex items-center gap-2 {isEditNameValid ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditNameValid ? '✅' : '❌'}</span> Nama (3-100 karakter)
+								</li>
+								<li class="flex items-center gap-2 {isEditEmailValid ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditEmailValid ? '✅' : '❌'}</span> Format email valid
+								</li>
+								<li class="flex items-center gap-2 {isEditPasswordValid ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditPasswordValid ? '✅' : '❌'}</span> Password (kosong / min 6 char)
+								</li>
+								<li class="flex items-center gap-2 {isEditPhoneValid ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditPhoneValid ? '✅' : '❌'}</span> No. HP (opsional / format Indonesia)
+								</li>
+								<li class="flex items-center gap-2 {isEditBirthDateValid() ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditBirthDateValid() ? '✅' : '❌'}</span> Tanggal lahir valid (1-120 thn)
+								</li>
+								<li class="flex items-center gap-2 {isEditAddressValid ? 'text-green-600' : 'text-slate-500'}">
+									<span>{isEditAddressValid ? '✅' : '❌'}</span>
+									{selectedUserDetail.role === 'pasien' ? 'Alamat tempat tinggal' : 'Departemen penugasan dipilih'}
+								</li>
+							</ul>
+						</div>
+
+						<!-- Action Buttons Edit -->
+						<div class="flex gap-3 pt-4 border-t border-slate-100">
+							<button
+								type="button"
+								onclick={cancelEditingUser}
+								class="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+							>
+								Batal
+							</button>
+							<button
+								type="submit"
+								disabled={!isEditFormValid || isEditUserSubmitting}
+								class="flex-1 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{isEditUserSubmitting ? 'Memproses...' : 'Simpan Perubahan'}
+							</button>
+						</div>
+					</form>
+				{:else}
+					<!-- ========================================= -->
+					<!-- DETAIL VIEW MODE -->
+					<!-- ========================================= -->
+					<div class="space-y-4">
+						<!-- ID Primary & Display Badge -->
+						<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+							<div class="flex items-center justify-between">
+								<span class="text-xs font-semibold text-slate-500">User Primary ID (DB)</span>
+								<span class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(selectedUserDetail.role)}">
+									{getRoleLabel(selectedUserDetail.role)}
+								</span>
+							</div>
+							<p class="mt-1 font-mono text-sm font-bold text-indigo-600 select-all">{selectedUserDetail.id}</p>
+
+							{#if selectedUserDetail.patientUser?.medical_record_number}
+								<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+									<span class="text-xs font-medium text-slate-500">No. Rekam Medis (MRN)</span>
+									<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.patientUser.medical_record_number}</span>
+								</div>
+							{/if}
+
+							{#if selectedUserDetail.employeeUser?.staff_code}
+								<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+									<span class="text-xs font-medium text-slate-500">Kode Staff / Pegawai</span>
+									<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.employeeUser.staff_code}</span>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Details Grid -->
+						<div class="grid gap-3 sm:grid-cols-2">
+							<div class="rounded-xl border border-slate-200/70 p-3">
+								<span class="text-xs font-medium text-slate-500">Nama Lengkap</span>
+								<p class="font-bold text-slate-900">{selectedUserDetail.name}</p>
+							</div>
+							<div class="rounded-xl border border-slate-200/70 p-3">
+								<span class="text-xs font-medium text-slate-500">Email</span>
+								<p class="font-bold text-slate-900 truncate">{selectedUserDetail.email}</p>
+							</div>
+							<div class="rounded-xl border border-slate-200/70 p-3">
+								<span class="text-xs font-medium text-slate-500">Nomor Telepon</span>
+								<p class="font-bold text-slate-900">{selectedUserDetail.phone || '-'}</p>
+							</div>
+							<div class="rounded-xl border border-slate-200/70 p-3">
+								<span class="text-xs font-medium text-slate-500">Tanggal Lahir</span>
+								<p class="font-bold text-slate-900">
+									{selectedUserDetail.birth_date ? new Date(selectedUserDetail.birth_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
+								</p>
+							</div>
+							<div class="rounded-xl border border-slate-200/70 p-3 sm:col-span-2">
+								<span class="text-xs font-medium text-slate-500">Status Akun</span>
+								<p class={`font-bold ${selectedUserDetail.is_active ? 'text-emerald-600' : 'text-rose-600'}`}>
+									{selectedUserDetail.is_active ? '✅ Aktif' : '❌ Non-Aktif'}
+								</p>
+							</div>
+						</div>
+
+						{#if selectedUserDetail.employeeUser?.departmen}
+							<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+								<span class="text-xs font-medium text-indigo-700">Departemen Penugasan</span>
+								<p class="font-bold text-indigo-950">
+									{selectedUserDetail.employeeUser.departmen.name} ({selectedUserDetail.employeeUser.departmen.departmen_code})
+								</p>
+								<p class="mt-0.5 text-xs text-slate-600">{selectedUserDetail.employeeUser.departmen.address}</p>
 							</div>
 						{/if}
-					</div>
 
-					<!-- Details Grid -->
-					<div class="grid gap-3 sm:grid-cols-2">
 						<div class="rounded-xl border border-slate-200/70 p-3">
-							<span class="text-xs font-medium text-slate-500">Nama Lengkap</span>
-							<p class="font-bold text-slate-900">{selectedUserDetail.name}</p>
+							<span class="text-xs font-medium text-slate-500">Alamat Tempat Tinggal</span>
+							<p class="text-sm font-semibold text-slate-800">{selectedUserDetail.address || '-'}</p>
 						</div>
-						<div class="rounded-xl border border-slate-200/70 p-3">
-							<span class="text-xs font-medium text-slate-500">Email</span>
-							<p class="font-bold text-slate-900 truncate">{selectedUserDetail.email}</p>
-						</div>
-						<div class="rounded-xl border border-slate-200/70 p-3">
-							<span class="text-xs font-medium text-slate-500">Nomor Telepon</span>
-							<p class="font-bold text-slate-900">{selectedUserDetail.phone || '-'}</p>
-						</div>
-						<div class="rounded-xl border border-slate-200/70 p-3">
-							<span class="text-xs font-medium text-slate-500">Status Akun</span>
-							<p class={`font-bold ${selectedUserDetail.is_active ? 'text-emerald-600' : 'text-rose-600'}`}>
-								{selectedUserDetail.is_active ? 'Aktif' : 'Non-Aktif'}
-							</p>
+
+						<!-- Action Controls Detail View -->
+						<div class="flex flex-wrap gap-2 pt-4 border-t border-slate-100">
+							<button
+								type="button"
+								onclick={startEditingUser}
+								class="flex-1 min-w-[120px] rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700"
+							>
+								✏️ Edit Data
+							</button>
+
+							<button
+								type="button"
+								onclick={async () => {
+									if (selectedUserDetail) {
+										await handleToggleUserStatus(selectedUserDetail);
+										closeUserDetailModal();
+									}
+								}}
+								class={`flex-1 min-w-[120px] rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-md transition ${selectedUserDetail.is_active ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+							>
+								{selectedUserDetail.is_active ? '⏸️ Nonaktifkan' : '▶️ Aktifkan'}
+							</button>
+
+							<button
+								type="button"
+								onclick={closeUserDetailModal}
+								class="w-full sm:w-auto rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+							>
+								Tutup
+							</button>
 						</div>
 					</div>
-
-					{#if selectedUserDetail.employeeUser?.departmen}
-						<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
-							<span class="text-xs font-medium text-indigo-700">Departemen Penugasan</span>
-							<p class="font-bold text-indigo-950">
-								{selectedUserDetail.employeeUser.departmen.name} ({selectedUserDetail.employeeUser.departmen.departmen_code})
-							</p>
-							<p class="mt-0.5 text-xs text-slate-600">{selectedUserDetail.employeeUser.departmen.address}</p>
-						</div>
-					{/if}
-
-					<div class="rounded-xl border border-slate-200/70 p-3">
-						<span class="text-xs font-medium text-slate-500">Alamat</span>
-						<p class="text-sm font-semibold text-slate-800">{selectedUserDetail.address || '-'}</p>
-					</div>
-
-					<!-- Action Controls -->
-					<div class="flex gap-3 pt-4">
-						<button
-							type="button"
-							onclick={closeUserDetailModal}
-							class="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-						>
-							Tutup
-						</button>
-						<button
-							type="button"
-							onclick={async () => {
-								if (selectedUserDetail) {
-									await handleToggleUserStatus(selectedUserDetail);
-									closeUserDetailModal();
-								}
-							}}
-							class={`flex-1 rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-md transition ${selectedUserDetail.is_active ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-						>
-							{selectedUserDetail.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Akun'}
-						</button>
-					</div>
-				</div>
+				{/if}
 			{:else}
 				<div class="py-6 text-center text-slate-500">Data detail user tidak dapat dimuat.</div>
 			{/if}
@@ -1843,6 +2447,18 @@
 					{/if}
 				</label>
 
+				<!-- Status Departemen -->
+				<label class="block text-sm font-medium text-slate-700">
+					<span class="mb-2 block">Status Departemen</span>
+					<select
+						bind:value={deptForm.is_active}
+						class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+					>
+						<option value={true}>Aktif</option>
+						<option value={false}>Non-Aktif</option>
+					</select>
+				</label>
+
 				<!-- Validation Checklist -->
 				<div
 					class="rounded-2xl border {isDeptFormValid
@@ -1881,51 +2497,6 @@
 					</button>
 				</div>
 			</form>
-		</div>
-	</div>
-{/if}
-
-<!-- ========================================= -->
-<!-- MODAL: HAPUS DEPARTEMEN                   -->
-<!-- ========================================= -->
-{#if showDeleteDeptModal && deletingDept}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"
-		onclick={(e) => { if (e.target === e.currentTarget) showDeleteDeptModal = false; }}
-		onkeydown={(e) => { if (e.key === 'Escape') showDeleteDeptModal = false; }}
-		role="dialog"
-		tabindex="-1"
-		aria-modal="true"
-		aria-label="Konfirmasi hapus departemen"
-	>
-		<div class="relative w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl sm:p-8">
-			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-6 w-6">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-				</svg>
-			</div>
-
-			<h3 class="text-lg font-bold text-slate-900">Hapus Departemen?</h3>
-			<p class="mt-2 text-sm text-slate-600">
-				Apakah Anda yakin ingin menghapus departemen <strong class="text-slate-900">{deletingDept.name}</strong>? Tindakan ini tidak dapat dibatalkan.
-			</p>
-
-			<div class="mt-6 flex gap-3">
-				<button
-					type="button"
-					onclick={() => (showDeleteDeptModal = false)}
-					class="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-				>
-					Batal
-				</button>
-				<button
-					type="button"
-					onclick={confirmDeleteDept}
-					class="flex-1 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-700"
-				>
-					Hapus
-				</button>
-			</div>
 		</div>
 	</div>
 {/if}

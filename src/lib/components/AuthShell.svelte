@@ -161,11 +161,11 @@
 					// Use goto() for client-side navigation — preserves in-memory JWT
 					// window.location.href would cause a full reload, wiping the memory-only token
 					const dashboardPath =
-						user.role.toLowerCase() === 'pasien'
+						user.role.toLowerCase() === 'patient'
 							? '/pasien/dashboard'
-							: user.role.toLowerCase() === 'dokter'
+							: user.role.toLowerCase() === 'doctor'
 								? '/doctor/dashboard'
-								: user.role.toLowerCase() === 'apoteker'
+								: user.role.toLowerCase() === 'pharmacist'
 									? '/apoteker/dashboard'
 									: user.role.toLowerCase() === 'admin'
 										? '/admin/dashboard'

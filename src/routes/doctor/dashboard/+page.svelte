@@ -9,7 +9,7 @@
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 
-	type DashboardUser = { role: string; name: string; id: string };
+	type DashboardUser = { role: string; name: string; id: string; user_code?: string };
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
@@ -32,7 +32,7 @@
 		}
 	});
 
-	let currentUser = $state<DashboardUser>({ role: 'dokter', name: '', id: '' });
+	let currentUser = $state<DashboardUser>({ role: 'dokter', name: '', id: '', user_code: '' });
 
 	let activeMenu = $state('beranda');
 	let isSidebarOpen = $state(false);
@@ -280,7 +280,7 @@
 				<div
 					class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
 				>
-					ID: {currentUser.id}
+					ID: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
@@ -351,7 +351,7 @@
 								<p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
 									Identitas Dokter
 								</p>
-								<p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.id}</p>
+								<p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.user_code || currentUser.id}</p>
 							</div>
 						</div>
 					</div>

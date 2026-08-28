@@ -9,12 +9,11 @@ export interface User {
     name: string;
     email: string;
     role: string;
+    user_code?: string;
     phone?: string;
     address?: string;
     birth_date?: string;
     createdAt?: string;
-    staff_code?: string;
-    medical_record_number?: string;
 }
 
 export interface Login {

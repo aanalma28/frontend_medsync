@@ -32,10 +32,11 @@
 		}
 	});
 
-	let currentUser = $state<{ role: string; name: string; id: string }>({
+	let currentUser = $state<{ role: string; name: string; id: string; user_code?: string }>({
 		role: 'apoteker',
 		name: '',
-		id: ''
+		id: '',
+		user_code: ''
 	});
 
 	let activeMenu = $state('beranda');
@@ -192,7 +193,7 @@
 				<div
 					class="rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
 				>
-					ID: {currentUser.id}
+					ID: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
@@ -253,7 +254,7 @@
 							<p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
 								ID Apoteker
 							</p>
-							<p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.id}</p>
+							<p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.user_code || currentUser.id}</p>
 						</div>
 					</div>
 				</div>

@@ -30,10 +30,11 @@
 		}
 	});
 
-	let currentUser = $state<{ role: string; name: string; id: string }>({
+	let currentUser = $state<{ role: string; name: string; id: string; user_code?: string }>({
 		role: 'pasien',
 		name: '',
-		id: ''
+		id: '',
+		user_code: ''
 	});
 
 	let activeMenu = $state('beranda');
@@ -54,7 +55,19 @@
 			doctor: 'dr. Nanda'
 		}
 	]);
-	let appointments = $state([
+	type AppointmentItem = {
+		id: number;
+		code: string;
+		doctor: string;
+		poli: string;
+		date: string;
+		time: string;
+		status: string;
+		location: string;
+		isUpcoming?: boolean;
+	};
+
+	let appointments = $state<AppointmentItem[]>([
 		{
 			id: 1,
 			code: 'JK-2026-001',
@@ -63,7 +76,8 @@
 			date: '2026-07-31',
 			time: '09:30',
 			status: 'Terjadwal',
-			location: 'Gedung A, Lantai 2'
+			location: 'Gedung A, Lantai 2',
+			isUpcoming: true
 		},
 		{
 			id: 2,
@@ -73,7 +87,8 @@
 			date: '2026-08-05',
 			time: '14:00',
 			status: 'Menunggu Konfirmasi',
-			location: 'Gedung B, Lantai 1'
+			location: 'Gedung B, Lantai 1',
+			isUpcoming: true
 		}
 	]);
 
@@ -351,7 +366,7 @@
 				<div
 					class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
 				>
-					ID: {currentUser.id}
+					ID: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
@@ -381,7 +396,7 @@
 							<p class="text-[10px] font-bold tracking-widest text-sky-100 uppercase">
 								Nomor Rekam Medis
 							</p>
-							<p class="mt-0.5 text-xl font-black tracking-wider text-white">{currentUser.id}</p>
+							<p class="mt-0.5 text-xl font-black tracking-wider text-white">{currentUser.user_code || currentUser.id}</p>
 						</div>
 					</div>
 				</div>

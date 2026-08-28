@@ -7,11 +7,11 @@
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 
-	type DashboardUser = { role: string; name: string; id: string };
+	type DashboardUser = { role: string; name: string; id: string; user_code?: string };
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
-	let currentUser = $state<DashboardUser>({ role: 'admin', name: '', id: '' });
+	let currentUser = $state<DashboardUser>({ role: 'admin', name: '', id: '', user_code: '' });
 
 	onMount(async () => {
 		try {
@@ -91,7 +91,7 @@
 				<div
 					class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
 				>
-					ID: {currentUser.id}
+					ID: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
