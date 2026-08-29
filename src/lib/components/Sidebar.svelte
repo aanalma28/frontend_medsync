@@ -41,8 +41,9 @@
 			{ id: 'branches', label: 'Oversight Cabang', iconName: 'globe' }
 		],
 		apoteker: [
-			{ id: 'beranda', label: 'Dasbor Apoteker', iconName: 'beranda' },
-			{ id: 'users', label: 'Data User', iconName: 'users' },
+			{ id: 'beranda', label: 'Dashboard Utama', iconName: 'beranda' },
+			{ id: 'inventory', label: 'Manajemen Stok', iconName: 'database' },
+			{ id: 'users', label: 'Direktori Pasien', iconName: 'users' },
 			{ id: 'pengaturan', label: 'Pengaturan', iconName: 'pengaturan' }
 		]
 	};

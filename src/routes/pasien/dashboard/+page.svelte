@@ -3,32 +3,23 @@
 	import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
 	import { validateSession } from '$lib/utils/getProfile';
-	import { api } from '$lib/api/api';
-	import { authState } from '$lib/stores/auth.svelte';
 	import DashboardSkeletonPasien from '$lib/components/skeleton/DashboardSkeletonPasien.svelte';
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
+	import { departmentStore } from '$lib/stores/department.svelte';
+	import {
+		patientAppointmentStore,
+		fetchAppointments,
+		fetchSchedules,
+		createAppointment,
+		cancelAppointment,
+		type DoctorSchedule,
+		type ScheduleSlot,
+		type PatientAppointment
+	} from '$lib/stores/patientAppointment.svelte';
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
-
-	onMount(async () => {
-		try {
-			const profile = await validateSession();
-
-			// Cek role secara ketat di client-side
-			if (profile.role.toLowerCase() !== 'patient') {
-				isForbidden = true;
-			} else {
-				currentUser = profile;
-			}
-		} catch (err) {
-			console.error('Gagal verifikasi sesi:', err);
-			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
-		} finally {
-			isLoading = false;
-		}
-	});
 
 	let currentUser = $state<{ role: string; name: string; id: string; user_code?: string }>({
 		role: 'pasien',
@@ -40,7 +31,7 @@
 	let activeMenu = $state('beranda');
 	let isSidebarOpen = $state(false);
 
-	// --- STATE JANJI TEMU (PASIEN) ---
+	// --- STATE DATA MEDIS & OBAT ---
 	let activeMeds = $state([
 		{ id: 1, name: 'Paracetamol 500mg', status: 'Siap Diambil di Apotek', isReady: true },
 		{ id: 2, name: 'Vitamin C 1000mg', status: 'Dikonsumsi (2 HARI LAGI)', isReady: false }
@@ -55,230 +46,193 @@
 			doctor: 'dr. Nanda'
 		}
 	]);
-	type AppointmentItem = {
-		id: number;
-		code: string;
-		doctor: string;
-		poli: string;
-		date: string;
-		time: string;
-		status: string;
-		location: string;
-		isUpcoming?: boolean;
-	};
 
-	let appointments = $state<AppointmentItem[]>([
-		{
-			id: 1,
-			code: 'JK-2026-001',
-			doctor: 'dr. Nanda Putri',
-			poli: 'Poliklinik Anak',
-			date: '2026-07-31',
-			time: '09:30',
-			status: 'Terjadwal',
-			location: 'Gedung A, Lantai 2',
-			isUpcoming: true
-		},
-		{
-			id: 2,
-			code: 'JK-2026-003',
-			doctor: 'dr. Arif Wijaya',
-			poli: 'Penyakit Dalam',
-			date: '2026-08-05',
-			time: '14:00',
-			status: 'Menunggu Konfirmasi',
-			location: 'Gedung B, Lantai 1',
-			isUpcoming: true
-		}
-	]);
+	// --- STATE JANJI TEMU REAL API ---
+	let selectedStatusFilter = $state<string>('ALL');
 
-	// State untuk Modal Form Buat/Ubah Janji
+	// Modal Buat Janji State
 	let showApptModal = $state(false);
-	let isEditingAppt = $state(false);
-	let editApptId = $state<number | null>(null);
-	let apptForm = $state({
-		poli: '',
-		doctor: '',
-		doctor_id: '',
-		date: '',
-		time: ''
+	let searchDeptId = $state('');
+	let searchDate = $state('');
+	let searchQuery = $state('');
+	let selectedSlotId = $state('');
+	let selectedSlotInfo = $state<{
+		doctorName: string;
+		deptName: string;
+		date: string;
+		slotName: string;
+		time: string;
+		remainingQuota: number;
+		maxPatient: number;
+	} | null>(null);
+	let bookingError = $state<string | null>(null);
+	let bookingSuccessData = $state<any | null>(null);
+	let showSuccessModal = $state(false);
+	let isCancellingId = $state<string | null>(null);
+
+	onMount(async () => {
+		try {
+			const profile = await validateSession();
+
+			if (profile.role.toLowerCase() !== 'patient') {
+				isForbidden = true;
+			} else {
+				currentUser = profile;
+				userProfile.name = profile.name;
+				await Promise.all([
+					departmentStore.fetchDepartments({ is_active: 'true' }),
+					fetchAppointments(),
+					fetchSchedules()
+				]);
+			}
+		} catch (err) {
+			console.error('Gagal verifikasi sesi:', err);
+			isForbidden = true;
+		} finally {
+			isLoading = false;
+		}
 	});
 
-	// State untuk fetch dokter berdasarkan poli + tanggal
-	let availableDoctors = $state<any[]>([]);
-	let isLoadingDoctors = $state(false);
-	let doctorFetchError = $state('');
+	function handleFilterStatusChange(status: string) {
+		selectedStatusFilter = status;
+		fetchAppointments({ status: status === 'ALL' ? undefined : status });
+	}
 
-	// State untuk fetch jadwal praktek dokter di tanggal terpilih
-	let doctorSchedule = $state<any[]>([]);
-	let isLoadingSchedule = $state(false);
-	let scheduleFetchError = $state('');
-	let selectedDoctorName = $state('');
+	async function handleSearchSchedules() {
+		selectedSlotId = '';
+		selectedSlotInfo = null;
+		bookingError = null;
+		await fetchSchedules({
+			date: searchDate || undefined,
+			departmen_id: searchDeptId || undefined,
+			search: searchQuery.trim() || undefined
+		});
+	}
 
-	// Daftar poliklinik yang tersedia
-	const poliOptions = [
-		'Penyakit Dalam',
-		'Poliklinik Anak',
-		'Gigi dan Mulut',
-		'Kardiologi (Jantung)',
-		'Mata',
-		'THT (Telinga Hidung Tenggorokan)',
-		'Kulit dan Kelamin',
-		'Saraf (Neurologi)',
-		'Bedah Umum',
-		'Kebidanan dan Kandungan'
-	];
+	function resetSearchFilters() {
+		searchDeptId = '';
+		searchDate = '';
+		searchQuery = '';
+		selectedSlotId = '';
+		selectedSlotInfo = null;
+		bookingError = null;
+		fetchSchedules();
+	}
 
-	// Fetch dokter ketika poli DAN tanggal sudah dipilih
-	async function fetchDoctorsByPoliAndDate() {
-		if (!apptForm.poli || !apptForm.date) return;
-
-		// Reset state terkait
-		availableDoctors = [];
-		doctorSchedule = [];
-		apptForm.doctor = '';
-		apptForm.doctor_id = '';
-		apptForm.time = '';
-		selectedDoctorName = '';
-		isLoadingDoctors = true;
-		doctorFetchError = '';
-
-		try {
-			const response = await api.get<any>(
-				`/appointments/doctors?poli=${encodeURIComponent(apptForm.poli)}&date=${apptForm.date}`
-			);
-			availableDoctors = response.data || response || [];
-		} catch (err: any) {
-			doctorFetchError = err.message || 'Gagal memuat daftar dokter. Silakan coba lagi.';
-		} finally {
-			isLoadingDoctors = false;
+	function selectSlot(doc: DoctorSchedule, slot: ScheduleSlot) {
+		if (slot.status_slot === 'CLOSED' || slot.remaining_quota <= 0 || !slot.is_active) {
+			return;
 		}
+		selectedSlotId = slot.id;
+		selectedSlotInfo = {
+			doctorName: doc.doctor.name,
+			deptName: doc.doctor.department?.name || 'Poliklinik',
+			date: doc.practice_date,
+			slotName: slot.name,
+			time: `${slot.start_hour} - ${slot.end_hour} WIB`,
+			remainingQuota: slot.remaining_quota,
+			maxPatient: slot.max_patient
+		};
+		bookingError = null;
 	}
-
-	// Fetch jadwal praktek dokter di tanggal terpilih
-	async function fetchDoctorSchedule(doctorId: string, doctorName: string) {
-		apptForm.doctor = doctorName;
-		apptForm.doctor_id = doctorId;
-		apptForm.time = '';
-		selectedDoctorName = doctorName;
-		isLoadingSchedule = true;
-		scheduleFetchError = '';
-		doctorSchedule = [];
-
-		try {
-			const response = await api.get<any>(
-				`/appointments/schedule?doctor_id=${doctorId}&date=${apptForm.date}`
-			);
-			doctorSchedule = response.data || response || [];
-		} catch (err: any) {
-			scheduleFetchError = err.message || 'Gagal memuat jadwal dokter.';
-		} finally {
-			isLoadingSchedule = false;
-		}
-	}
-
-	// Handler ketika poli berubah
-	function onPoliChange() {
-		apptForm.doctor = '';
-		apptForm.doctor_id = '';
-		apptForm.time = '';
-		availableDoctors = [];
-		doctorSchedule = [];
-		selectedDoctorName = '';
-		if (apptForm.date) fetchDoctorsByPoliAndDate();
-	}
-
-	// Handler ketika tanggal berubah
-	function onDateChange() {
-		apptForm.doctor = '';
-		apptForm.doctor_id = '';
-		apptForm.time = '';
-		availableDoctors = [];
-		doctorSchedule = [];
-		selectedDoctorName = '';
-		if (apptForm.poli) fetchDoctorsByPoliAndDate();
-	}
-
-	// Pilih slot waktu dari jadwal
-	function selectTimeSlot(time: string) {
-		apptForm.time = time;
-	}
-
-	// Cek apakah form valid untuk submit
-	let isApptFormValid = $derived(
-		apptForm.poli !== '' && apptForm.doctor !== '' && apptForm.date !== '' && apptForm.time !== ''
-	);
 
 	function openAddApptModal() {
-		isEditingAppt = false;
-		editApptId = null;
-		apptForm = { poli: '', doctor: '', doctor_id: '', date: '', time: '' };
-		availableDoctors = [];
-		doctorSchedule = [];
-		selectedDoctorName = '';
-		doctorFetchError = '';
-		scheduleFetchError = '';
+		searchDeptId = '';
+		searchDate = '';
+		searchQuery = '';
+		selectedSlotId = '';
+		selectedSlotInfo = null;
+		bookingError = null;
 		showApptModal = true;
+		fetchSchedules();
 	}
 
-	function openEditApptModal(item: any) {
-		isEditingAppt = true;
-		editApptId = item.id;
-		apptForm = {
-			poli: item.poli,
-			doctor: item.doctor,
-			doctor_id: item.doctor_id || '',
-			date: item.date,
-			time: item.time
-		};
-		availableDoctors = [];
-		doctorSchedule = [];
-		selectedDoctorName = item.doctor;
-		doctorFetchError = '';
-		scheduleFetchError = '';
-		showApptModal = true;
-	}
-
-	function cancelAppointment(id: number) {
-		if (confirm('Yakin ingin membatalkan janji temu ini?')) {
-			appointments = appointments.filter((a) => a.id !== id);
-		}
-	}
-
-	function saveAppointment(e: Event) {
+	async function handleBookAppointment(e: Event) {
 		e.preventDefault();
-		if (!isApptFormValid) return;
+		if (!selectedSlotId) return;
 
-		if (isEditingAppt && editApptId !== null) {
-			appointments = appointments.map((a) => (a.id === editApptId ? { ...a, ...apptForm } : a));
-		} else {
-			const newId = appointments.length > 0 ? Math.max(...appointments.map((a) => a.id)) + 1 : 1;
-			appointments = [
-				...appointments,
-				{
-					id: newId,
-					code: `JK-2026-00${newId}`,
-					status: 'Menunggu Konfirmasi',
-					location: 'Gedung Utama, Lantai 2',
-					...apptForm
-				}
-			];
+		bookingError = null;
+
+		try {
+			const res = await createAppointment(selectedSlotId);
+			bookingSuccessData = res.data;
+			showApptModal = false;
+			showSuccessModal = true;
+		} catch (err: any) {
+			bookingError = err.message || 'Gagal membuat janji temu.';
 		}
-		showApptModal = false;
 	}
 
-	// Mendapatkan tanggal minimum (hari ini)
+	async function handleCancelAppointment(appointmentId: string) {
+		if (!confirm('Apakah Anda yakin ingin membatalkan janji temu ini?')) return;
+
+		isCancellingId = appointmentId;
+
+		try {
+			await cancelAppointment(appointmentId);
+			alert('Janji temu berhasil dibatalkan.');
+		} catch (err: any) {
+			alert('Gagal membatalkan janji temu: ' + (err.message || 'Terjadi kesalahan'));
+		} finally {
+			isCancellingId = null;
+		}
+	}
+
+	function formatDate(dateStr?: string): string {
+		if (!dateStr) return '-';
+		try {
+			const dateObj = new Date(dateStr.split('T')[0]);
+			return dateObj.toLocaleDateString('id-ID', {
+				weekday: 'long',
+				day: 'numeric',
+				month: 'long',
+				year: 'numeric'
+			});
+		} catch {
+			return dateStr;
+		}
+	}
+
 	function getTodayDate(): string {
 		const today = new Date();
 		return today.toISOString().split('T')[0];
 	}
+
+	function getStatusBadgeClass(status: string): string {
+		switch (status) {
+			case 'CONFIRMED':
+				return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+			case 'COMPLETED':
+				return 'bg-sky-100 text-sky-800 border-sky-300';
+			case 'CANCELLED':
+				return 'bg-rose-100 text-rose-800 border-rose-300';
+			case 'PENDING':
+			default:
+				return 'bg-amber-100 text-amber-800 border-amber-300';
+		}
+	}
+
+	function getStatusLabel(status: string): string {
+		switch (status) {
+			case 'CONFIRMED':
+				return 'Terjadwal';
+			case 'COMPLETED':
+				return 'Selesai';
+			case 'CANCELLED':
+				return 'Dibatalkan';
+			case 'PENDING':
+			default:
+				return 'Menunggu Konfirmasi';
+		}
+	}
+
 	// --- STATE MENU RESEP OBAT (PASIEN) ---
 	let activePrescriptions = $state([
 		{
 			id: 'RX-2026-007',
 			doctor: 'dr. Nanda Putri',
 			date: '30 Juli 2026',
-			status: 'Siap Ambil', // 'Dalam Proses' atau 'Siap Ambil'
+			status: 'Siap Ambil',
 			isReady: true,
 			medicines: [
 				{ name: 'Paracetamol 500mg', rules: '3x1 Sehari (Sesudah makan)' },
@@ -303,6 +257,7 @@
 			medicines: [{ name: 'Ibuprofen 400mg', rules: '3x1 Jika perlu' }]
 		}
 	]);
+
 	// --- STATE MENU PENGATURAN (PASIEN) ---
 	let userProfile = $state({
 		name: currentUser.name,
@@ -348,21 +303,22 @@
 				class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden"
 			>
 				<!-- svelte-ignore a11y_consider_explicit_label -->
-				<button onclick={() => (isSidebarOpen = true)} class="text-sky-600"
-					><svg
+				<button onclick={() => (isSidebarOpen = true)} class="text-sky-600">
+					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
 						stroke-width="2"
 						stroke="currentColor"
 						class="h-7 w-7"
-						><path
+					>
+						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
 							d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"
-						/></svg
-					></button
-				>
+						/>
+					</svg>
+				</button>
 				<div
 					class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
 				>
@@ -376,7 +332,7 @@
 			{:else if isForbidden}
 				<ErrorState status={403} />
 			{:else}
-				<!-- HEADER HERO PASIEN (LEMBUT & MENENANGKAN) -->
+				<!-- HEADER HERO PASIEN -->
 				<div
 					class="relative mb-6 overflow-hidden rounded-[24px] bg-gradient-to-r from-sky-600 to-cyan-500 p-6 text-white shadow-lg sm:p-8"
 				>
@@ -396,14 +352,17 @@
 							<p class="text-[10px] font-bold tracking-widest text-sky-100 uppercase">
 								Nomor Rekam Medis
 							</p>
-							<p class="mt-0.5 text-xl font-black tracking-wider text-white">{currentUser.user_code || currentUser.id}</p>
+							<p class="mt-0.5 text-xl font-black tracking-wider text-white">
+								{currentUser.user_code || currentUser.id}
+							</p>
 						</div>
 					</div>
 				</div>
 
-				<!-- SMART ALERTS (Sistem Notifikasi Anti-Bingung) -->
+				<!-- SMART ALERTS -->
 				<div class="mb-8 space-y-3">
-					{#if appointments.some((a) => a.isUpcoming)}
+					{#if patientAppointmentStore.appointments.some((a) => a.status === 'PENDING' || a.status === 'CONFIRMED')}
+						{@const upcoming = patientAppointmentStore.appointments.find((a) => a.status === 'PENDING' || a.status === 'CONFIRMED')}
 						<div
 							class="flex items-center justify-between rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm"
 						>
@@ -411,28 +370,28 @@
 								<div
 									class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500 text-white"
 								>
-									<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-										><path
+									<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path
 											stroke-linecap="round"
 											stroke-linejoin="round"
 											stroke-width="2"
 											d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-										></path></svg
-									>
+										></path>
+									</svg>
 								</div>
 								<div>
 									<p class="text-sm font-bold text-sky-900">Pengingat Jadwal Kunjungan</p>
 									<p class="text-xs font-medium text-sky-700">
-										Anda memiliki jadwal dengan dokter <strong>Besok</strong>. Jangan sampai
-										terlewat!
+										Anda memiliki janji temu dengan <strong>{upcoming?.doctor?.name || 'Dokter'}</strong> ({upcoming?.doctor?.department?.name || 'Poli'}) - Antrean #{upcoming?.queue_number}.
 									</p>
 								</div>
 							</div>
 							<button
 								onclick={() => (activeMenu = 'janji')}
 								class="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-sky-700"
-								>Lihat Jadwal</button
 							>
+								Lihat Detail
+							</button>
 						</div>
 					{/if}
 
@@ -444,14 +403,14 @@
 								<div
 									class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white"
 								>
-									<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-										><path
+									<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path
 											stroke-linecap="round"
 											stroke-linejoin="round"
 											stroke-width="2"
 											d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-										></path></svg
-									>
+										></path>
+									</svg>
 								</div>
 								<div>
 									<p class="text-sm font-bold text-emerald-900">Obat Anda Sudah Siap!</p>
@@ -465,7 +424,7 @@
 				</div>
 
 				<!-- ===================== -->
-				<!-- MENU 1: BERANDA	   -->
+				<!-- MENU 1: BERANDA       -->
 				<!-- ===================== -->
 				{#if activeMenu === 'beranda'}
 					<div class="grid gap-6 lg:grid-cols-2">
@@ -473,33 +432,40 @@
 						<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
 							<div class="mb-5 flex items-center justify-between">
 								<h2 class="text-lg font-bold text-slate-900">Jadwal Mendatang</h2>
-								<button
-									onclick={() => (activeMenu = 'janji')}
-									class="text-sm font-bold text-sky-600">Lihat Semua &rarr;</button
-								>
+								<button onclick={() => (activeMenu = 'janji')} class="text-sm font-bold text-sky-600">
+									Lihat Semua &rarr;
+								</button>
 							</div>
-							<div class="space-y-4">
-								{#each appointments as appt (appt.id)}
-									<div
-										class={`rounded-xl border p-4 ${appt.isUpcoming ? 'border-sky-500 bg-sky-50/50 shadow-sm' : 'border-slate-100 bg-slate-50'}`}
-									>
-										<div class="flex items-center justify-between">
-											<p class="font-black text-slate-900">{appt.poli}</p>
-											{#if appt.isUpcoming}
-												<span
-													class="rounded bg-sky-100 px-2 py-1 text-[10px] font-black text-sky-700 uppercase"
-													>Besok</span
-												>
-											{/if}
+
+							{#if patientAppointmentStore.isLoadingAppointments}
+								<div class="flex items-center justify-center py-8">
+									<div class="h-6 w-6 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600"></div>
+								</div>
+							{:else if patientAppointmentStore.appointments.length === 0}
+								<div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-400">
+									Belum ada janji temu mendatang.
+								</div>
+							{:else}
+								<div class="space-y-4">
+									{#each patientAppointmentStore.appointments.slice(0, 3) as appt (appt.id)}
+										<div
+											class={`rounded-xl border p-4 ${appt.status === 'CONFIRMED' || appt.status === 'PENDING' ? 'border-sky-500 bg-sky-50/50 shadow-sm' : 'border-slate-100 bg-slate-50'}`}
+										>
+											<div class="flex items-center justify-between">
+												<p class="font-black text-slate-900">{appt.doctor?.department?.name || 'Poliklinik'}</p>
+												<span class="rounded border px-2 py-0.5 text-[10px] font-black uppercase {getStatusBadgeClass(appt.status)}">
+													{getStatusLabel(appt.status)}
+												</span>
+											</div>
+											<p class="mt-1 text-sm font-medium text-slate-600">{appt.doctor?.name || 'Dokter MedSync'}</p>
+											<div class="mt-3 flex items-center justify-between text-xs font-bold text-slate-500">
+												<span class="flex items-center gap-1">📅 {formatDate(appt.practice_date)}</span>
+												<span class="flex items-center gap-1">⏰ {appt.slot ? `${appt.slot.start_hour} - ${appt.slot.end_hour}` : ''} WIB</span>
+											</div>
 										</div>
-										<p class="mt-1 text-sm font-medium text-slate-600">{appt.doctor}</p>
-										<div class="mt-3 flex items-center gap-4 text-xs font-bold text-slate-500">
-											<span class="flex items-center gap-1">📅 {appt.date}</span>
-											<span class="flex items-center gap-1">⏰ {appt.time} WIB</span>
-										</div>
-									</div>
-								{/each}
-							</div>
+									{/each}
+								</div>
+							{/if}
 						</section>
 
 						<!-- KANAN: STATUS OBAT & REKAM MEDIS -->
@@ -514,8 +480,9 @@
 											<p class="text-sm font-bold text-slate-900">{med.name}</p>
 											<span
 												class={`rounded-lg px-2.5 py-1 text-[10px] font-black tracking-wider uppercase ${med.isReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
-												>{med.status}</span
 											>
+												{med.status}
+											</span>
 										</div>
 									{/each}
 								</div>
@@ -536,9 +503,10 @@
 							</div>
 						</aside>
 					</div>
-					<!-- =========================== -->
-					<!-- MENU 2: JANJI TEMU (PASIEN) -->
-					<!-- =========================== -->
+
+				<!-- =========================== -->
+				<!-- MENU 2: JANJI TEMU (PASIEN) -->
+				<!-- =========================== -->
 				{:else if activeMenu == 'janji'}
 					<div class="space-y-6">
 						<!-- Banner Atas / Aksi Buat Janji -->
@@ -548,7 +516,7 @@
 							<div>
 								<h2 class="text-xl font-bold text-slate-900">Kelola Janji Temu Dokter</h2>
 								<p class="mt-1 text-sm text-slate-500">
-									Buat jadwal konsultasi baru atau ubah jadwal yang sudah ada.
+									Cari jadwal praktek dokter, pilih slot waktu yang tersedia, dan pantau antrean Anda.
 								</p>
 							</div>
 							<button
@@ -559,408 +527,435 @@
 							</button>
 						</div>
 
-						<!-- Daftar Kartu Janji Temu -->
-						<div class="grid gap-5 md:grid-cols-2">
-							{#each appointments as item (item.id)}
-								<div
-									class="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:border-sky-300"
-								>
-									<div>
-										<!-- Header Kartu -->
-										<div class="flex items-center justify-between border-b border-slate-100 pb-3">
-											<span class="rounded-lg bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700"
-												>{item.poli}</span
-											>
-											<span
-												class={`rounded-lg px-2.5 py-1 text-[10px] font-black tracking-wider uppercase ${item.status === 'Terjadwal' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
-											>
-												{item.status}
-											</span>
-										</div>
-
-										<!-- Info Dokter & Waktu -->
-										<div class="mt-4 space-y-2">
-											<p class="text-xl font-bold text-slate-900">{item.doctor}</p>
-											<p class="flex items-center gap-2 text-sm font-semibold text-slate-600">
-												<span>📅</span>
-												{item.date} &nbsp;|&nbsp; <span>⏰</span>
-												{item.time} WIB
-											</p>
-											<p class="flex items-center gap-2 text-xs font-medium text-slate-400">
-												<span>📍</span>
-												{item.location}
-											</p>
-										</div>
-									</div>
-
-									<!-- Tombol Aksi CRUD -->
-									<div
-										class="mt-6 flex items-center justify-between border-t border-slate-100 pt-4"
-									>
-										<span class="text-xs font-bold text-slate-400">Kode: {item.code}</span>
-										<div class="flex gap-2">
-											<button
-												onclick={() => openEditApptModal(item)}
-												class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
-												>Ubah Jadwal</button
-											>
-											<button
-												onclick={() => cancelAppointment(item.id)}
-												class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100"
-												>Batalkan</button
-											>
-										</div>
-									</div>
-								</div>
-							{:else}
-								<div
-									class="col-span-full rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400"
-								>
-									Belum ada janji temu aktif. Klik tombol di atas untuk membuat jadwal baru.
-								</div>
-							{/each}
+						<!-- Filter Status Tabs -->
+						<div class="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+							<button
+								onclick={() => handleFilterStatusChange('ALL')}
+								class="rounded-xl px-4 py-2 text-xs font-bold transition-all {selectedStatusFilter === 'ALL'
+									? 'bg-sky-600 text-white shadow-md'
+									: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}"
+							>
+								Semua
+							</button>
+							<button
+								onclick={() => handleFilterStatusChange('PENDING')}
+								class="rounded-xl px-4 py-2 text-xs font-bold transition-all {selectedStatusFilter === 'PENDING'
+									? 'bg-amber-500 text-white shadow-md'
+									: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}"
+							>
+								Menunggu Konfirmasi
+							</button>
+							<button
+								onclick={() => handleFilterStatusChange('CONFIRMED')}
+								class="rounded-xl px-4 py-2 text-xs font-bold transition-all {selectedStatusFilter === 'CONFIRMED'
+									? 'bg-emerald-600 text-white shadow-md'
+									: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}"
+							>
+								Terjadwal
+							</button>
+							<button
+								onclick={() => handleFilterStatusChange('COMPLETED')}
+								class="rounded-xl px-4 py-2 text-xs font-bold transition-all {selectedStatusFilter === 'COMPLETED'
+									? 'bg-sky-600 text-white shadow-md'
+									: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}"
+							>
+								Selesai
+							</button>
+							<button
+								onclick={() => handleFilterStatusChange('CANCELLED')}
+								class="rounded-xl px-4 py-2 text-xs font-bold transition-all {selectedStatusFilter === 'CANCELLED'
+									? 'bg-rose-600 text-white shadow-md'
+									: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}"
+							>
+								Dibatalkan
+							</button>
 						</div>
+
+						<!-- List Janji Temu -->
+						{#if patientAppointmentStore.isLoadingAppointments}
+							<div class="flex flex-col items-center justify-center py-12">
+								<div class="h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"></div>
+								<p class="mt-3 text-sm font-medium text-slate-500">Memuat daftar janji temu Anda...</p>
+							</div>
+						{:else if patientAppointmentStore.error}
+							<div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+								<p class="text-sm font-bold text-rose-600">❌ {patientAppointmentStore.error}</p>
+								<button
+									onclick={() => fetchAppointments({ status: selectedStatusFilter === 'ALL' ? undefined : selectedStatusFilter })}
+									class="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
+								>
+									Coba Lagi
+								</button>
+							</div>
+						{:else if patientAppointmentStore.appointments.length === 0}
+							<div class="col-span-full rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">
+								<p class="text-3xl mb-2">📅</p>
+								<p class="font-bold text-slate-600">
+									Belum ada janji temu {selectedStatusFilter !== 'ALL' ? `dengan status ${getStatusLabel(selectedStatusFilter)}` : ''}.
+								</p>
+								<p class="text-xs text-slate-400 mt-1">Klik tombol "Buat Janji Temu Baru" untuk memilih jadwal dokter.</p>
+							</div>
+						{:else}
+							<div class="grid gap-5 md:grid-cols-2">
+								{#each patientAppointmentStore.appointments as item (item.id)}
+									<div class="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:border-sky-300">
+										<div>
+											<!-- Header Kartu -->
+											<div class="flex items-center justify-between border-b border-slate-100 pb-3">
+												<div class="flex items-center gap-2">
+													<span class="rounded-lg bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
+														{item.doctor?.department?.name || 'Poliklinik'}
+													</span>
+													<span class="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-black text-white">
+														Antrean #{item.queue_number}
+													</span>
+												</div>
+												<span class="rounded-lg border px-2.5 py-1 text-[10px] font-black tracking-wider uppercase {getStatusBadgeClass(item.status)}">
+													{getStatusLabel(item.status)}
+												</span>
+											</div>
+
+											<!-- Info Dokter & Waktu -->
+											<div class="mt-4 space-y-2">
+												<p class="text-xl font-bold text-slate-900">{item.doctor?.name || 'Dokter MedSync'}</p>
+												<p class="flex items-center gap-2 text-sm font-semibold text-slate-600">
+													<span>📅</span> {formatDate(item.practice_date)} &nbsp;|&nbsp; <span>⏰</span> {item.slot ? `${item.slot.start_hour} - ${item.slot.end_hour} WIB` : 'Jam Praktik'}
+												</p>
+												{#if item.doctor?.department?.address || item.doctor?.department?.city}
+													<p class="flex items-center gap-2 text-xs font-medium text-slate-400">
+														<span>📍</span> {item.doctor.department.address || ''} {item.doctor.department.city ? `, ${item.doctor.department.city}` : ''}
+													</p>
+												{/if}
+											</div>
+										</div>
+
+										<!-- Footer Tombol Aksi -->
+										<div class="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+											<span class="text-xs font-bold text-slate-400">ID: {item.id}</span>
+											<div class="flex gap-2">
+												{#if item.status === 'PENDING' || item.status === 'CONFIRMED'}
+													<button
+														disabled={isCancellingId === item.id}
+														onclick={() => handleCancelAppointment(item.id)}
+														class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+													>
+														{isCancellingId === item.id ? 'Membatalkan...' : 'Batalkan Janji'}
+													</button>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
-					<!-- MODAL FORM CRUD JANJI TEMU PASIEN (REVISED FLOW) -->
+					<!-- MODAL FORM BUAT JANJI TEMU PASIEN -->
 					{#if showApptModal}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
 							onkeydown={(e) => e.key === 'Escape' && (showApptModal = false)}
 						>
-							<div
-								class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] bg-white p-7 shadow-2xl sm:p-8"
-							>
+							<div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[28px] bg-white p-7 shadow-2xl sm:p-8">
 								<!-- Header Modal -->
-								<div class="mb-6 border-b border-slate-100 pb-5">
-									<h2 class="text-xl font-bold text-slate-900">
-										{isEditingAppt ? 'Ubah Jadwal Konsultasi' : 'Buat Janji Temu Baru'}
-									</h2>
-									<p class="mt-1 text-sm text-slate-500">
-										Pilih poliklinik dan tanggal terlebih dahulu untuk melihat dokter yang tersedia.
-									</p>
+								<div class="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
+									<div>
+										<h2 class="text-xl font-bold text-slate-900">Buat Janji Temu Baru</h2>
+										<p class="mt-1 text-sm text-slate-500">
+											Filter dokter berdasarkan poliklinik atau tanggal, lalu pilih slot jadwal yang tersedia.
+										</p>
+									</div>
+									<button
+										type="button"
+										onclick={() => (showApptModal = false)}
+										class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+									>
+										✕
+									</button>
 								</div>
 
-								<form onsubmit={saveAppointment} class="space-y-6">
-									<!-- STEP 1: Pilih Poliklinik & Tanggal -->
-									<div class="rounded-2xl border border-sky-100 bg-sky-50/40 p-5">
-										<div class="mb-4 flex items-center gap-2">
-											<div
-												class="flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-black text-white"
+								<!-- Filter Search Bar inside Modal -->
+								<div class="mb-6 rounded-2xl border border-sky-100 bg-sky-50/50 p-5 space-y-4">
+									<div class="grid gap-4 sm:grid-cols-3">
+										<!-- Filter Poliklinik -->
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase">
+												Poliklinik
+											</span>
+											<select
+												bind:value={searchDeptId}
+												onchange={handleSearchSchedules}
+												class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
 											>
-												1
-											</div>
-											<h3 class="text-sm font-bold text-slate-800">
-												Pilih Poliklinik & Tanggal Kunjungan
-											</h3>
-										</div>
+												<option value="">— Semua Poliklinik —</option>
+												{#each departmentStore.list as dept}
+													<option value={dept.id}>{dept.name}</option>
+												{/each}
+											</select>
+										</label>
 
-										<div class="grid gap-4 sm:grid-cols-2">
-											<label class="block">
-												<span
-													class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-													>Departemen / Poliklinik</span
-												>
-												<select
-													bind:value={apptForm.poli}
-													onchange={onPoliChange}
-													class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-												>
-													<option value="">— Pilih Poliklinik —</option>
-													{#each poliOptions as poli}
-														<option value={poli}>{poli}</option>
-													{/each}
-												</select>
-											</label>
+										<!-- Filter Tanggal -->
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase">
+												Tanggal Praktik
+											</span>
+											<input
+												type="date"
+												bind:value={searchDate}
+												onchange={handleSearchSchedules}
+												min={getTodayDate()}
+												class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+											/>
+										</label>
 
-											<label class="block">
-												<span
-													class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-													>Tanggal Kunjungan</span
-												>
+										<!-- Search Keyword -->
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase">
+												Cari Dokter / Poli
+											</span>
+											<div class="relative flex items-center">
 												<input
-													type="date"
-													bind:value={apptForm.date}
-													onchange={onDateChange}
-													min={getTodayDate()}
-													class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+													type="text"
+													bind:value={searchQuery}
+													oninput={handleSearchSchedules}
+													placeholder="Ketik nama dokter..."
+													class="w-full rounded-xl border border-slate-300 bg-white pl-3 pr-8 py-2.5 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
 												/>
-											</label>
-										</div>
-
-										{#if !apptForm.poli || !apptForm.date}
-											<p class="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-600">
-												<span>⚠️</span> Lengkapi poliklinik dan tanggal untuk melihat dokter yang tersedia.
-											</p>
-										{/if}
-									</div>
-
-									<!-- STEP 2: Pilih Dokter (muncul setelah poli + tanggal dipilih) -->
-									{#if apptForm.poli && apptForm.date}
-										<div class="rounded-2xl border border-slate-200 bg-white p-5">
-											<div class="mb-4 flex items-center gap-2">
-												<div
-													class="flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-xs font-black text-white"
-												>
-													2
-												</div>
-												<h3 class="text-sm font-bold text-slate-800">Pilih Dokter yang Praktek</h3>
-											</div>
-
-											{#if isLoadingDoctors}
-												<!-- Loading State -->
-												<div class="flex flex-col items-center justify-center py-8">
-													<div
-														class="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"
-													></div>
-													<p class="text-sm font-medium text-slate-500">Memuat daftar dokter...</p>
-												</div>
-											{:else if doctorFetchError}
-												<!-- Error State -->
-												<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-center">
-													<p class="text-sm font-bold text-rose-600">❌ {doctorFetchError}</p>
+												{#if searchQuery}
 													<button
 														type="button"
-														onclick={fetchDoctorsByPoliAndDate}
-														class="mt-2 rounded-lg bg-rose-100 px-4 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-200"
+														onclick={() => { searchQuery = ''; handleSearchSchedules(); }}
+														class="absolute right-2.5 text-xs text-slate-400 hover:text-slate-600"
 													>
-														Coba Lagi
+														✕
 													</button>
-												</div>
-											{:else if availableDoctors.length === 0}
-												<!-- Empty State -->
-												<div
-													class="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center"
-												>
-													<p class="text-2xl">🏥</p>
-													<p class="mt-2 text-sm font-bold text-slate-500">
-														Tidak ada dokter yang praktek
-													</p>
-													<p class="text-xs text-slate-400">
-														Coba ubah poliklinik atau pilih tanggal lain.
-													</p>
-												</div>
-											{:else}
-												<!-- Daftar Kartu Dokter -->
-												<div class="grid gap-3 sm:grid-cols-2">
-													{#each availableDoctors as doc}
-														<button
-															type="button"
-															onclick={() => fetchDoctorSchedule(doc.id, doc.name)}
-															class="group flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-all {apptForm.doctor_id ===
-															doc.id
-																? 'border-sky-500 bg-sky-50 shadow-md shadow-sky-100'
-																: 'border-slate-200 bg-white hover:border-sky-300 hover:shadow-sm'}"
-														>
-															<div
-																class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full {apptForm.doctor_id ===
-																doc.id
-																	? 'bg-sky-600 text-white'
-																	: 'bg-slate-100 text-slate-500 group-hover:bg-sky-100 group-hover:text-sky-600'}"
-															>
-																<svg
-																	class="h-5 w-5"
-																	fill="none"
-																	stroke="currentColor"
-																	viewBox="0 0 24 24"
-																>
-																	<path
-																		stroke-linecap="round"
-																		stroke-linejoin="round"
-																		stroke-width="2"
-																		d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-																	/>
-																</svg>
-															</div>
-															<div class="min-w-0 flex-1">
-																<p class="truncate text-sm font-bold text-slate-900">{doc.name}</p>
-																{#if doc.specialization}
-																	<p class="text-xs font-medium text-sky-600">
-																		{doc.specialization}
-																	</p>
-																{/if}
-																{#if doc.practice_hours}
-																	<p class="mt-1 text-[11px] text-slate-400">
-																		🕐 {doc.practice_hours}
-																	</p>
-																{/if}
-																{#if apptForm.doctor_id === doc.id}
-																	<span
-																		class="mt-1.5 inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white"
-																	>
-																		✓ Dipilih
-																	</span>
-																{/if}
-															</div>
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-									{/if}
-
-									<!-- STEP 3: Lihat Jadwal & Pilih Waktu (muncul setelah dokter dipilih) -->
-									{#if apptForm.doctor}
-										<div class="rounded-2xl border border-emerald-100 bg-emerald-50/30 p-5">
-											<div class="mb-4 flex items-center gap-2">
-												<div
-													class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white"
-												>
-													3
-												</div>
-												<h3 class="text-sm font-bold text-slate-800">Jadwal Praktek & Pilih Jam</h3>
+												{/if}
 											</div>
-
-											<div class="mb-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
-												<p class="text-xs font-medium text-sky-700">
-													📋 Jadwal <strong>{selectedDoctorName}</strong> pada tanggal
-													<strong>{apptForm.date}</strong>
-												</p>
-											</div>
-
-											{#if isLoadingSchedule}
-												<div class="flex items-center justify-center gap-2 py-6">
-													<div
-														class="h-5 w-5 animate-spin rounded-full border-[3px] border-emerald-200 border-t-emerald-600"
-													></div>
-													<p class="text-sm font-medium text-slate-500">Memuat jadwal...</p>
-												</div>
-											{:else if scheduleFetchError}
-												<div class="rounded-xl border border-rose-200 bg-rose-50 p-4 text-center">
-													<p class="text-sm font-bold text-rose-600">❌ {scheduleFetchError}</p>
-												</div>
-											{:else if doctorSchedule.length > 0}
-												<!-- Grid Slot Waktu -->
-												<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
-													{#each doctorSchedule as slot}
-														<button
-															type="button"
-															onclick={() => selectTimeSlot(slot.time)}
-															disabled={slot.is_booked}
-															class="rounded-xl border-2 px-3 py-2.5 text-center text-sm font-bold transition-all
-															{slot.is_booked
-																? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 line-through'
-																: apptForm.time === slot.time
-																	? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md shadow-emerald-100'
-																	: 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:bg-emerald-50'}"
-														>
-															{slot.time}
-															{#if slot.is_booked}
-																<span
-																	class="block text-[9px] font-medium text-slate-400 no-underline"
-																	style="text-decoration: none;">Terisi</span
-																>
-															{:else if slot.patient_count !== undefined}
-																<span class="block text-[9px] font-medium text-emerald-500"
-																	>{slot.patient_count} pasien</span
-																>
-															{/if}
-														</button>
-													{/each}
-												</div>
-
-												<!-- Legenda -->
-												<div class="mt-3 flex items-center gap-4 text-[10px] text-slate-400">
-													<span class="flex items-center gap-1"
-														><span
-															class="inline-block h-2.5 w-2.5 rounded border border-slate-200 bg-white"
-														></span> Tersedia</span
-													>
-													<span class="flex items-center gap-1"
-														><span
-															class="inline-block h-2.5 w-2.5 rounded border border-emerald-500 bg-emerald-50"
-														></span> Dipilih</span
-													>
-													<span class="flex items-center gap-1"
-														><span
-															class="inline-block h-2.5 w-2.5 rounded border border-slate-200 bg-slate-100"
-														></span> Penuh</span
-													>
-												</div>
-											{:else}
-												<!-- Fallback: input manual jika API jadwal belum tersedia -->
-												<div class="space-y-3">
-													<p class="text-xs text-slate-500">
-														Data slot jadwal belum tersedia. Silakan pilih jam secara manual:
-													</p>
-													<label class="block">
-														<span
-															class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-															>Estimasi Jam Kunjungan</span
-														>
-														<input
-															type="time"
-															bind:value={apptForm.time}
-															class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm transition outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-														/>
-													</label>
-												</div>
-											{/if}
-										</div>
-									{/if}
-
-									<!-- SUMMARY / KONFIRMASI (muncul jika semua sudah dipilih) -->
-									{#if isApptFormValid}
-										<div
-											class="rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-5"
-										>
-											<div class="mb-3 flex items-center gap-2">
-												<span class="text-lg">✅</span>
-												<h3 class="text-sm font-bold text-emerald-800">Ringkasan Janji Temu</h3>
-											</div>
-											<div class="grid gap-2 text-sm sm:grid-cols-2">
-												<div class="rounded-lg bg-white/80 p-3">
-													<p class="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-														Poliklinik
-													</p>
-													<p class="font-bold text-slate-900">{apptForm.poli}</p>
-												</div>
-												<div class="rounded-lg bg-white/80 p-3">
-													<p class="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-														Dokter
-													</p>
-													<p class="font-bold text-slate-900">{apptForm.doctor}</p>
-												</div>
-												<div class="rounded-lg bg-white/80 p-3">
-													<p class="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-														Tanggal
-													</p>
-													<p class="font-bold text-slate-900">📅 {apptForm.date}</p>
-												</div>
-												<div class="rounded-lg bg-white/80 p-3">
-													<p class="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-														Jam
-													</p>
-													<p class="font-bold text-slate-900">⏰ {apptForm.time} WIB</p>
-												</div>
-											</div>
-										</div>
-									{/if}
-
-									<!-- Tombol Aksi -->
-									<div class="flex justify-end gap-3 border-t border-slate-100 pt-5">
-										<button
-											type="button"
-											onclick={() => (showApptModal = false)}
-											class="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 transition hover:bg-slate-100"
-											>Batal</button
-										>
-										<button
-											type="submit"
-											disabled={!isApptFormValid}
-											class="rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-										>
-											{isEditingAppt ? 'Simpan Perubahan' : 'Konfirmasi Janji Temu'}
-										</button>
+										</label>
 									</div>
-								</form>
+
+									<div class="flex items-center justify-between pt-1">
+										<p class="text-xs text-slate-500">
+											Menampilkan jadwal aktif yang memiliki kuota antrean pasien.
+										</p>
+										{#if searchDeptId || searchDate || searchQuery}
+											<button
+												type="button"
+												onclick={resetSearchFilters}
+												class="text-xs font-bold text-sky-600 hover:underline"
+											>
+												Reset Filter
+											</button>
+										{/if}
+									</div>
+								</div>
+
+								<!-- Error Alert inside Modal -->
+								{#if bookingError}
+									<div class="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 flex items-center gap-3 text-rose-700 text-sm font-bold">
+										<span>⚠️</span>
+										<div class="flex-1">{bookingError}</div>
+									</div>
+								{/if}
+
+								<!-- Schedule List Results -->
+								<div class="space-y-6">
+									{#if patientAppointmentStore.isLoadingSchedules}
+										<div class="flex flex-col items-center justify-center py-10">
+											<div class="h-8 w-8 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"></div>
+											<p class="mt-2 text-xs font-medium text-slate-500">Memuat daftar jadwal praktek dokter...</p>
+										</div>
+									{:else if patientAppointmentStore.schedules.length === 0}
+										<div class="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+											<p class="text-2xl">🏥</p>
+											<p class="mt-2 text-sm font-bold text-slate-600">Tidak ada jadwal dokter yang sesuai filter</p>
+											<p class="text-xs text-slate-400 mt-1">Coba ubah tanggal atau pilih poliklinik lain.</p>
+										</div>
+									{:else}
+										{#each patientAppointmentStore.schedules as doc (doc.id)}
+											<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+												<!-- Header Dokter -->
+												<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+													<div>
+														<div class="flex items-center gap-2">
+															<span class="rounded bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800 uppercase">
+																{doc.doctor.department?.name || 'Poliklinik'}
+															</span>
+															{#if doc.doctor.staff_code}
+																<span class="text-xs font-bold text-slate-400">
+																	Kode: {doc.doctor.staff_code}
+																</span>
+															{/if}
+														</div>
+														<h3 class="text-lg font-bold text-slate-900 mt-1">{doc.doctor.name}</h3>
+													</div>
+													<div class="rounded-xl bg-slate-50 px-3 py-1.5 border border-slate-200 text-xs font-bold text-slate-700">
+														📅 {formatDate(doc.practice_date)}
+													</div>
+												</div>
+
+												<!-- Grid Slot Praktik Dokter -->
+												<div>
+													<p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+														Pilih Slot Sesi Praktik:
+													</p>
+													<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+														{#each doc.slots as slot (slot.id)}
+															{@const isFull = slot.status_slot === 'CLOSED' || slot.remaining_quota <= 0 || !slot.is_active}
+															{@const isSelected = selectedSlotId === slot.id}
+															<button
+																type="button"
+																disabled={isFull}
+																onclick={() => selectSlot(doc, slot)}
+																class="flex flex-col justify-between rounded-xl border-2 p-3 text-left transition-all relative {isFull
+																	? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-75'
+																	: isSelected
+																		? 'border-sky-500 bg-sky-50 shadow-md shadow-sky-100 ring-2 ring-sky-200'
+																		: 'border-slate-200 bg-white text-slate-800 hover:border-sky-300 hover:shadow-sm'}"
+															>
+																<div class="flex items-center justify-between">
+																	<span class="text-xs font-black uppercase text-slate-700">{slot.name}</span>
+																	{#if isFull}
+																		<span class="rounded bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-700 uppercase">
+																			FULL / Ditutup
+																		</span>
+																	{:else if isSelected}
+																		<span class="rounded-full bg-sky-600 px-2 py-0.5 text-[9px] font-black text-white">
+																			✓ Dipilih
+																		</span>
+																	{:else}
+																		<span class="rounded bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-800 uppercase">
+																			OPEN
+																		</span>
+																	{/if}
+																</div>
+
+																<div class="mt-2 space-y-1">
+																	<p class="text-sm font-bold text-slate-900">⏰ {slot.start_hour} - {slot.end_hour} WIB</p>
+																	<p class="text-xs font-medium {isFull ? 'text-slate-400' : 'text-emerald-600'}">
+																		📊 Sisa Kuota: <strong>{slot.remaining_quota}</strong> / {slot.max_patient} pasien
+																	</p>
+																</div>
+															</button>
+														{/each}
+													</div>
+												</div>
+											</div>
+										{/each}
+									{/if}
+								</div>
+
+								<!-- Summary Card for Selected Slot -->
+								{#if selectedSlotInfo}
+									<div class="mt-6 rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 shadow-sm">
+										<div class="mb-3 flex items-center justify-between">
+											<h3 class="text-sm font-bold text-emerald-900 flex items-center gap-2">
+												<span>✅</span> Ringkasan Booking Janji Temu
+											</h3>
+											<span class="text-xs font-bold text-emerald-700">Sisa Kuota: {selectedSlotInfo.remainingQuota}</span>
+										</div>
+										<div class="grid gap-2 text-sm sm:grid-cols-2">
+											<div class="rounded-lg bg-white/90 p-3">
+												<p class="text-[10px] font-bold text-slate-400 uppercase">Poliklinik</p>
+												<p class="font-bold text-slate-900">{selectedSlotInfo.deptName}</p>
+											</div>
+											<div class="rounded-lg bg-white/90 p-3">
+												<p class="text-[10px] font-bold text-slate-400 uppercase">Dokter</p>
+												<p class="font-bold text-slate-900">{selectedSlotInfo.doctorName}</p>
+											</div>
+											<div class="rounded-lg bg-white/90 p-3">
+												<p class="text-[10px] font-bold text-slate-400 uppercase">Tanggal Praktik</p>
+												<p class="font-bold text-slate-900">📅 {formatDate(selectedSlotInfo.date)}</p>
+											</div>
+											<div class="rounded-lg bg-white/90 p-3">
+												<p class="text-[10px] font-bold text-slate-400 uppercase">Sesi & Jam</p>
+												<p class="font-bold text-slate-900">⏰ {selectedSlotInfo.slotName} ({selectedSlotInfo.time})</p>
+											</div>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Actions -->
+								<div class="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-5">
+									<button
+										type="button"
+										onclick={() => (showApptModal = false)}
+										class="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 transition hover:bg-slate-100"
+									>
+										Batal
+									</button>
+									<button
+										type="button"
+										onclick={handleBookAppointment}
+										disabled={!selectedSlotId || patientAppointmentStore.isSubmitting}
+										class="rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+									>
+										{patientAppointmentStore.isSubmitting ? 'Memproses Booking...' : 'Konfirmasi & Booking Janji Temu'}
+									</button>
+								</div>
 							</div>
 						</div>
 					{/if}
-					<!-- ===================== -->
-					<!-- MENU 3: RESEP OBAT (PASIEN) -->
-					<!-- ===================== -->
+
+					<!-- SUCCESS BOOKING MODAL -->
+					{#if showSuccessModal && bookingSuccessData}
+						<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+							<div class="w-full max-w-md rounded-[28px] bg-white p-7 text-center shadow-2xl">
+								<div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-600">
+									🎉
+								</div>
+								<h3 class="text-2xl font-black text-slate-900">Janji Temu Berhasil!</h3>
+								<p class="mt-1 text-sm font-medium text-slate-500">
+									Pendaftaran janji temu Anda telah masuk ke sistem MedSync.
+								</p>
+
+								<div class="my-6 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 text-left">
+									<div class="mb-4 text-center border-b border-emerald-200/60 pb-3">
+										<p class="text-xs font-bold uppercase tracking-wider text-emerald-700">Nomor Antrean Anda</p>
+										<p class="text-4xl font-black tracking-wider text-emerald-900 mt-1">
+											#{bookingSuccessData.queue_number}
+										</p>
+									</div>
+									<div class="space-y-2 text-xs font-semibold text-slate-700">
+										<div class="flex justify-between">
+											<span class="text-slate-400">Dokter:</span>
+											<span class="font-bold text-slate-900">{bookingSuccessData.schedule?.doctor?.name || '-'}</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-slate-400">Poliklinik:</span>
+											<span class="font-bold text-slate-900">{bookingSuccessData.schedule?.doctor?.department?.name || '-'}</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-slate-400">Tanggal:</span>
+											<span class="font-bold text-slate-900">{formatDate(bookingSuccessData.schedule?.practice_date)}</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-slate-400">Jam Sesi:</span>
+											<span class="font-bold text-slate-900">{bookingSuccessData.schedule?.start_hour} - {bookingSuccessData.schedule?.end_hour} WIB</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-slate-400">Status:</span>
+											<span class="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+												{getStatusLabel(bookingSuccessData.status)}
+											</span>
+										</div>
+									</div>
+								</div>
+
+								<button
+									onclick={() => { showSuccessModal = false; activeMenu = 'janji'; }}
+									class="w-full rounded-xl bg-sky-600 py-3 text-sm font-bold text-white shadow-md hover:bg-sky-700"
+								>
+									Lihat Janji Temu Saya
+								</button>
+							</div>
+						</div>
+					{/if}
+
+				<!-- ===================== -->
+				<!-- MENU 3: RESEP OBAT (PASIEN) -->
+				<!-- ===================== -->
 				{:else if activeMenu == 'resep'}
 					<div class="space-y-6">
 						<!-- Header Informasi -->
@@ -971,7 +966,7 @@
 							</p>
 						</div>
 
-						<!-- Bagian 1: Resep Aktif (Sedang Berjalan) -->
+						<!-- Bagian 1: Resep Aktif -->
 						<section class="space-y-4">
 							<h3 class="text-lg font-bold text-slate-800">Status Resep Saat Ini</h3>
 
@@ -1051,15 +1046,16 @@
 											<div class="mb-1 flex items-center gap-2">
 												<span
 													class="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700"
-													>{history.status}</span
 												>
+													{history.status}
+												</span>
 												<span class="text-xs font-semibold text-slate-400">{history.date}</span>
 											</div>
 											<p class="font-bold text-slate-900">{history.doctor}</p>
 											<p class="mt-2 text-xs font-medium text-slate-600">
-												Obat: <span class="font-semibold text-slate-800"
-													>{history.medicines.map((m) => m.name).join(', ')}</span
-												>
+												Obat: <span class="font-semibold text-slate-800">
+													{history.medicines.map((m) => m.name).join(', ')}
+												</span>
 											</p>
 										</div>
 										<span class="text-xs font-bold text-slate-400">ID: {history.id}</span>
@@ -1068,9 +1064,10 @@
 							</div>
 						</section>
 					</div>
-					<!-- ===================== -->
-					<!-- MENU 4: PENGATURAN AKUN (PASIEN) -->
-					<!-- ===================== -->
+
+				<!-- ===================== -->
+				<!-- MENU 4: PENGATURAN AKUN (PASIEN) -->
+				<!-- ===================== -->
 				{:else if activeMenu == 'pengaturan'}
 					<div class="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
 						<!-- Kiri: Form Informasi Pribadi & Medis -->
@@ -1093,9 +1090,9 @@
 										/>
 									</label>
 									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700"
-											>Nomor Rekam Medis (ID)</span
-										>
+										<span class="mb-1.5 block text-sm font-bold text-slate-700">
+											Nomor Rekam Medis (ID)
+										</span>
 										<input
 											value={currentUser.id}
 											disabled
@@ -1115,9 +1112,9 @@
 										/>
 									</label>
 									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700"
-											>Nomor Telepon / WhatsApp</span
-										>
+										<span class="mb-1.5 block text-sm font-bold text-slate-700">
+											Nomor Telepon / WhatsApp
+										</span>
 										<input
 											type="tel"
 											bind:value={userProfile.phone}
@@ -1128,9 +1125,9 @@
 								</div>
 
 								<label class="block">
-									<span class="mb-1.5 block text-sm font-bold text-slate-700"
-										>Alamat Tempat Tinggal</span
-									>
+									<span class="mb-1.5 block text-sm font-bold text-slate-700">
+										Alamat Tempat Tinggal
+									</span>
 									<textarea
 										bind:value={userProfile.address}
 										rows="2"
@@ -1142,9 +1139,9 @@
 									<h3 class="mb-4 text-base font-bold text-slate-900">Catatan Darurat Medis</h3>
 									<div class="grid gap-5 md:grid-cols-2">
 										<label class="block">
-											<span class="mb-1.5 block text-sm font-bold text-slate-700"
-												>Golongan Darah</span
-											>
+											<span class="mb-1.5 block text-sm font-bold text-slate-700">
+												Golongan Darah
+											</span>
 											<select
 												bind:value={userProfile.bloodType}
 												class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
@@ -1156,9 +1153,9 @@
 											</select>
 										</label>
 										<label class="block">
-											<span class="mb-1.5 block text-sm font-bold text-slate-700"
-												>Alergi (Obat/Makanan)</span
-											>
+											<span class="mb-1.5 block text-sm font-bold text-slate-700">
+												Alergi (Obat/Makanan)
+											</span>
 											<input
 												bind:value={userProfile.allergies}
 												class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
@@ -1180,7 +1177,6 @@
 
 						<!-- Kanan: Preferensi Notifikasi & Keamanan -->
 						<aside class="space-y-6">
-							<!-- Preferensi Notifikasi -->
 							<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
 								<h3 class="font-bold text-slate-900">Pengingat & Notifikasi</h3>
 								<p class="mb-4 text-xs text-slate-500">
@@ -1218,7 +1214,6 @@
 								</div>
 							</div>
 
-							<!-- Keamanan Akun -->
 							<div class="rounded-[24px] bg-slate-900 p-6 text-white shadow-lg">
 								<h3 class="font-bold">Keamanan & Privasi</h3>
 								<p class="text-xs text-slate-400">Lindungi data kesehatan rahasia Anda</p>

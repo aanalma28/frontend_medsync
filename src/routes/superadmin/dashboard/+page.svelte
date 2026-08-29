@@ -27,10 +27,7 @@
 			}
 
 			// Panggil API departemen (/departments) dan API user (/users)
-			await Promise.all([
-				departmentStore.fetchDepartments(),
-				userStore.fetchUsers()
-			]);
+			await Promise.all([departmentStore.fetchDepartments(), userStore.fetchUsers()]);
 		} catch (err) {
 			console.error('Gagal verifikasi sesi:', err);
 			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
@@ -270,7 +267,9 @@
 					accepted_terms: true
 				});
 			} else {
-				let mappedRole: 'SUPERADMIN' | 'MASTERADMIN' | 'REGISTER_ADMIN' | 'DOCTOR' | 'PHARMACIST' | 'NURSE' = 'DOCTOR';
+				let mappedRole:
+					'SUPERADMIN' | 'MASTERADMIN' | 'REGISTER_ADMIN' | 'DOCTOR' | 'PHARMACIST' | 'NURSE' =
+					'DOCTOR';
 				if (addUserForm.role === 'superadmin') mappedRole = 'SUPERADMIN';
 				else if (addUserForm.role === 'admin') mappedRole = 'REGISTER_ADMIN';
 				else if (addUserForm.role === 'dokter') mappedRole = 'DOCTOR';
@@ -324,9 +323,12 @@
 	});
 
 	// Derived validation rules for Edit User Form
-	let isEditNameValid = $derived(editUserForm.name.trim().length >= 3 && editUserForm.name.trim().length <= 100);
+	let isEditNameValid = $derived(
+		editUserForm.name.trim().length >= 3 && editUserForm.name.trim().length <= 100
+	);
 	let isEditEmailValid = $derived(
-		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editUserForm.email.trim()) && editUserForm.email.trim().length <= 100
+		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editUserForm.email.trim()) &&
+			editUserForm.email.trim().length <= 100
 	);
 	let isEditPasswordValid = $derived(
 		editUserForm.password.trim() === '' ||
@@ -443,7 +445,7 @@
 			}
 
 			await userStore.updateUser(selectedUserDetail.id, payload);
-			
+
 			// Refresh list & single item detail
 			await userStore.fetchUsers();
 			const updatedDetail = await userStore.getUserById(selectedUserDetail.id);
@@ -485,9 +487,15 @@
 			? departments
 			: departments.filter(
 					(d) =>
-						(d.kode_departmen || d.departmen_code || '').toLowerCase().includes(deptSearchInUserModal.toLowerCase()) ||
-						(d.nama_departmen || d.name || '').toLowerCase().includes(deptSearchInUserModal.toLowerCase()) ||
-						(d.alamat_departmen || d.address || '').toLowerCase().includes(deptSearchInUserModal.toLowerCase())
+						(d.kode_departmen || d.departmen_code || '')
+							.toLowerCase()
+							.includes(deptSearchInUserModal.toLowerCase()) ||
+						(d.nama_departmen || d.name || '')
+							.toLowerCase()
+							.includes(deptSearchInUserModal.toLowerCase()) ||
+						(d.alamat_departmen || d.address || '')
+							.toLowerCase()
+							.includes(deptSearchInUserModal.toLowerCase())
 				)
 	);
 	let selectedDept = $derived(
@@ -500,10 +508,16 @@
 			? departments
 			: departments.filter(
 					(d) =>
-						(d.kode_departmen || d.departmen_code || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
-						(d.nama_departmen || d.name || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
-						(d.city || d.cabang || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
-						(d.alamat_departmen || d.address || '').toLowerCase().includes(editDeptSearch.toLowerCase())
+						(d.kode_departmen || d.departmen_code || '')
+							.toLowerCase()
+							.includes(editDeptSearch.toLowerCase()) ||
+						(d.nama_departmen || d.name || '')
+							.toLowerCase()
+							.includes(editDeptSearch.toLowerCase()) ||
+						(d.city || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
+						(d.alamat_departmen || d.address || '')
+							.toLowerCase()
+							.includes(editDeptSearch.toLowerCase())
 				)
 	);
 	let selectedEditDept = $derived(
@@ -528,9 +542,7 @@
 		is_active: true
 	});
 
-	let isDeptCodeValid = $derived(
-		/^[A-Za-z0-9_-]{2,50}$/.test(deptForm.code.trim())
-	);
+	let isDeptCodeValid = $derived(/^[A-Za-z0-9_-]{2,50}$/.test(deptForm.code.trim()));
 	let isDeptNameValid = $derived(
 		deptForm.name.trim().length >= 2 && deptForm.name.trim().length <= 100
 	);
@@ -538,19 +550,23 @@
 		deptForm.address.trim().length >= 3 && deptForm.address.trim().length <= 500
 	);
 
-	let isDeptFormValid = $derived(
-		isDeptCodeValid && isDeptNameValid && isDeptAddressValid
-	);
+	let isDeptFormValid = $derived(isDeptCodeValid && isDeptNameValid && isDeptAddressValid);
 
 	let filteredDepartments = $derived(
 		departments
 			.filter((d) => {
 				const matchesSearch =
 					deptSearchQuery.trim() === '' ||
-					(d.departmen_code || d.kode_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-					(d.name || d.nama_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-					(d.city || d.cabang || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
-					(d.address || d.alamat_departmen || '').toLowerCase().includes(deptSearchQuery.toLowerCase());
+					(d.departmen_code || d.kode_departmen || '')
+						.toLowerCase()
+						.includes(deptSearchQuery.toLowerCase()) ||
+					(d.name || d.nama_departmen || '')
+						.toLowerCase()
+						.includes(deptSearchQuery.toLowerCase()) ||
+					(d.city || '').toLowerCase().includes(deptSearchQuery.toLowerCase()) ||
+					(d.address || d.alamat_departmen || '')
+						.toLowerCase()
+						.includes(deptSearchQuery.toLowerCase());
 
 				const isDeptActive = d.is_active !== false;
 				const matchesStatus =
@@ -576,11 +592,23 @@
 		showDeptModal = true;
 	}
 
-	function openEditDeptModal(dept: { id: string; id_departmen?: string; code?: string; departmen_code?: string; kode_departmen?: string; name?: string; nama_departmen?: string; city?: string; cabang?: string; address?: string; alamat_departmen?: string; is_active?: boolean }) {
+	function openEditDeptModal(dept: {
+		id: string;
+		id_departmen?: string;
+		code?: string;
+		departmen_code?: string;
+		kode_departmen?: string;
+		name?: string;
+		nama_departmen?: string;
+		city?: string;
+		address?: string;
+		alamat_departmen?: string;
+		is_active?: boolean;
+	}) {
 		deptForm = {
 			code: dept.departmen_code || dept.kode_departmen || dept.code || '',
 			name: dept.name || dept.nama_departmen || '',
-			city: dept.city || dept.cabang || '',
+			city: dept.city || '',
 			address: dept.address || dept.alamat_departmen || '',
 			is_active: dept.is_active !== false
 		};
@@ -613,7 +641,6 @@
 					departmen_code: cleanCode,
 					name: cleanName,
 					city: cleanCity || undefined,
-					cabang: cleanCity || undefined,
 					address: cleanAddress,
 					is_active: deptForm.is_active
 				});
@@ -622,7 +649,6 @@
 					departmen_code: cleanCode,
 					name: cleanName,
 					city: cleanCity || undefined,
-					cabang: cleanCity || undefined,
 					address: cleanAddress,
 					is_active: deptForm.is_active
 				});
@@ -636,7 +662,13 @@
 		}
 	}
 
-	async function handleToggleDeptStatus(dept: { id: string; id_departmen?: string; is_active?: boolean; name?: string; nama_departmen?: string }) {
+	async function handleToggleDeptStatus(dept: {
+		id: string;
+		id_departmen?: string;
+		is_active?: boolean;
+		name?: string;
+		nama_departmen?: string;
+	}) {
 		const deptId = dept.id || dept.id_departmen || '';
 		if (!deptId || isDeptSubmitting) return;
 
@@ -773,7 +805,9 @@
 						</div>
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 							<p class="text-sm font-bold text-slate-600">Total Pasien</p>
-							<p class="mt-3 text-3xl font-black text-slate-900">{allAccounts.filter((a) => a.role === 'pasien').length}</p>
+							<p class="mt-3 text-3xl font-black text-slate-900">
+								{allAccounts.filter((a) => a.role === 'pasien').length}
+							</p>
 							<p class="mt-1 text-xs font-semibold text-emerald-500">Terdaftar di Sistem</p>
 						</div>
 						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -838,7 +872,9 @@
 									<li class="flex items-center justify-between border-b border-slate-50 pb-3">
 										<div>
 											<h3 class="font-bold text-slate-800">{dept.name || dept.nama_departmen}</h3>
-											<p class="text-xs text-slate-500">Kode: {dept.departmen_code || dept.kode_departmen}</p>
+											<p class="text-xs text-slate-500">
+												Kode: {dept.departmen_code || dept.kode_departmen}
+											</p>
 										</div>
 										{#if dept.is_active !== false}
 											<span
@@ -942,7 +978,7 @@
 											<span
 												class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-600/20"
 											>
-												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+												<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
 												Aktif
 											</span>
 										{:else}
@@ -958,14 +994,14 @@
 									<!-- Card Body: User Info -->
 									<div class="my-3 space-y-1">
 										<p class="text-sm font-bold text-slate-900">{account.name}</p>
-										<p class="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+										<p class="flex items-center gap-1.5 truncate text-xs text-slate-500">
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
 												fill="none"
 												viewBox="0 0 24 24"
 												stroke-width="1.5"
 												stroke="currentColor"
-												class="h-3.5 w-3.5 text-slate-400 shrink-0"
+												class="h-3.5 w-3.5 shrink-0 text-slate-400"
 											>
 												<path
 													stroke-linecap="round"
@@ -976,14 +1012,14 @@
 											<span class="truncate">{account.email}</span>
 										</p>
 										{#if account.branch && account.branch !== '-'}
-											<p class="flex items-center gap-1.5 text-xs text-slate-600 pt-0.5">
+											<p class="flex items-center gap-1.5 pt-0.5 text-xs text-slate-600">
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
 													fill="none"
 													viewBox="0 0 24 24"
 													stroke-width="1.5"
 													stroke="currentColor"
-													class="h-3.5 w-3.5 text-indigo-500 shrink-0"
+													class="h-3.5 w-3.5 shrink-0 text-indigo-500"
 												>
 													<path
 														stroke-linecap="round"
@@ -1000,7 +1036,7 @@
 									<div class="grid grid-cols-3 gap-1.5 border-t border-slate-100 pt-3">
 										<button
 											onclick={() => openUserDetail(account.id, false)}
-											class="flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2 text-xs font-bold text-sky-700 transition active:scale-95 hover:bg-sky-100"
+											class="flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-2 py-2 text-xs font-bold text-sky-700 transition hover:bg-sky-100 active:scale-95"
 										>
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
@@ -1025,10 +1061,21 @@
 										</button>
 										<button
 											onclick={() => openUserDetail(account.id, true)}
-											class="flex items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-bold text-indigo-700 transition active:scale-95 hover:bg-indigo-100"
+											class="flex items-center justify-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95"
 										>
-											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-												<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="2"
+												stroke="currentColor"
+												class="h-3.5 w-3.5"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+												/>
 											</svg>
 											<span>Edit</span>
 										</button>
@@ -1036,7 +1083,7 @@
 										{#if account.is_active}
 											<button
 												onclick={() => handleToggleUserStatus(account)}
-												class="flex items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
+												class="flex items-center justify-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100 active:scale-95"
 											>
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
@@ -1057,7 +1104,7 @@
 										{:else}
 											<button
 												onclick={() => handleToggleUserStatus(account)}
-												class="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
+												class="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95"
 											>
 												<svg
 													xmlns="http://www.w3.org/2000/svg"
@@ -1082,22 +1129,28 @@
 						</div>
 
 						<!-- Desktop Table View -->
-						<div class="hidden md:block overflow-x-auto">
+						<div class="hidden overflow-x-auto md:block">
 							<table class="w-full text-left text-sm">
 								<thead class="bg-slate-50 text-slate-500">
 									<tr>
-										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap">ID / Kode</th>
+										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap"
+											>ID / Kode</th
+										>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Nama / Email</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Role</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Departemen</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Status</th>
-										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap">Aksi</th>
+										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap"
+											>Aksi</th
+										>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredAccounts as account}
 										<tr class="transition hover:bg-slate-50/80">
-											<td class="px-4 py-3.5 font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
+											<td
+												class="px-4 py-3.5 font-mono text-xs font-bold whitespace-nowrap text-slate-900"
+											>
 												{account.displayId || account.id}
 											</td>
 											<td class="px-4 py-3.5">
@@ -1111,15 +1164,18 @@
 													{getRoleLabel(account.role)}
 												</span>
 											</td>
-											<td class="px-4 py-3.5 text-slate-600 font-medium whitespace-nowrap">{account.branch || '-'}</td>
-											
+											<td class="px-4 py-3.5 font-medium whitespace-nowrap text-slate-600"
+												>{account.branch || '-'}</td
+											>
+
 											<!-- Polished Status Column -->
 											<td class="px-4 py-3.5 whitespace-nowrap">
 												{#if account.is_active}
 													<span
 														class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-600/20"
 													>
-														<span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+														<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"
+														></span>
 														Aktif
 													</span>
 												{:else}
@@ -1137,7 +1193,7 @@
 												<div class="inline-flex items-center justify-end gap-2">
 													<button
 														onclick={() => openUserDetail(account.id, false)}
-														class="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-500/20 shadow-2xs"
+														class="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 shadow-2xs transition hover:border-sky-300 hover:bg-sky-100 focus:ring-2 focus:ring-sky-500/20 focus:outline-none"
 														title="Lihat Detail Akun"
 													>
 														<svg
@@ -1163,11 +1219,22 @@
 													</button>
 													<button
 														onclick={() => openUserDetail(account.id, true)}
-														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition hover:border-indigo-300 hover:bg-indigo-100 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none"
 														title="Edit Data User"
 													>
-														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-															<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="2"
+															stroke="currentColor"
+															class="h-3.5 w-3.5"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+															/>
 														</svg>
 														<span>Edit</span>
 													</button>
@@ -1175,7 +1242,7 @@
 													{#if account.is_active}
 														<button
 															onclick={() => handleToggleUserStatus(account)}
-															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs"
+															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 shadow-2xs transition hover:border-amber-300 hover:bg-amber-100 focus:ring-2 focus:ring-amber-500/20 focus:outline-none"
 															title="Nonaktifkan Akun"
 														>
 															<svg
@@ -1197,7 +1264,7 @@
 													{:else}
 														<button
 															onclick={() => handleToggleUserStatus(account)}
-															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-2xs"
+															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-2xs transition hover:border-emerald-300 hover:bg-emerald-100 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
 															title="Aktifkan Akun"
 														>
 															<svg
@@ -1294,40 +1361,65 @@
 							</div>
 							<div class="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
 								<p class="text-xs font-semibold text-emerald-700">Departemen Aktif</p>
-								<p class="mt-1 text-2xl font-black text-emerald-900">{departments.filter((d) => d.is_active !== false).length}</p>
+								<p class="mt-1 text-2xl font-black text-emerald-900">
+									{departments.filter((d) => d.is_active !== false).length}
+								</p>
 							</div>
 							<div class="rounded-xl border border-slate-200 bg-slate-100 p-4">
 								<p class="text-xs font-semibold text-slate-600">Departemen Non-Aktif</p>
-								<p class="mt-1 text-2xl font-black text-slate-700">{departments.filter((d) => d.is_active === false).length}</p>
+								<p class="mt-1 text-2xl font-black text-slate-700">
+									{departments.filter((d) => d.is_active === false).length}
+								</p>
 							</div>
 						</div>
 
 						<!-- Mobile Card View Departemen -->
 						<div class="block space-y-3 md:hidden">
 							{#each filteredDepartments as dept}
-								<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200">
+								<div
+									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
+								>
 									<div class="flex items-center justify-between border-b border-slate-100 pb-3">
-										<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700">
+										<span
+											class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700"
+										>
 											{dept.departmen_code || dept.kode_departmen}
 										</span>
 										{#if dept.is_active !== false}
-											<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+											<span
+												class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700"
+											>
 												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Aktif
 											</span>
 										{:else}
-											<span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">
+											<span
+												class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600"
+											>
 												<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span> Non-Aktif
 											</span>
 										{/if}
 									</div>
 									<div class="my-3 space-y-1">
-										<h3 class="font-bold text-slate-900 text-sm">{dept.nama_departmen || dept.name}</h3>
-										{#if dept.city || dept.cabang}
+										<h3 class="text-sm font-bold text-slate-900">
+											{dept.nama_departmen || dept.name}
+										</h3>
+										{#if dept.city}
 											<p class="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
-												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-3.5 w-3.5 shrink-0">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75" />
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="1.5"
+													stroke="currentColor"
+													class="h-3.5 w-3.5 shrink-0"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75"
+													/>
 												</svg>
-												<span>Cabang {dept.city || dept.cabang}</span>
+												<span>Cabang {dept.city}</span>
 											</p>
 										{/if}
 										<p class="flex items-start gap-1 text-xs text-slate-500">
@@ -1338,10 +1430,21 @@
 									<div class="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
 										<button
 											onclick={() => openEditDeptModal(dept)}
-											class="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition active:scale-95 hover:bg-indigo-100"
+											class="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95"
 										>
-											<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-												<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="2"
+												stroke="currentColor"
+												class="h-3.5 w-3.5"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+												/>
 											</svg>
 											<span>Edit</span>
 										</button>
@@ -1349,20 +1452,42 @@
 										{#if dept.is_active !== false}
 											<button
 												onclick={() => handleToggleDeptStatus(dept)}
-												class="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 transition active:scale-95 hover:bg-amber-100"
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100 active:scale-95"
 											>
-												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+													stroke="currentColor"
+													class="h-3.5 w-3.5"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+													/>
 												</svg>
 												<span>Nonaktifkan</span>
 											</button>
 										{:else}
 											<button
 												onclick={() => handleToggleDeptStatus(dept)}
-												class="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition active:scale-95 hover:bg-emerald-100"
+												class="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95"
 											>
-												<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-													<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke-width="2"
+													stroke="currentColor"
+													class="h-3.5 w-3.5"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+													/>
 												</svg>
 												<span>Aktifkan</span>
 											</button>
@@ -1373,51 +1498,82 @@
 						</div>
 
 						<!-- Desktop Table View Departemen -->
-						<div class="hidden md:block overflow-x-auto">
+						<div class="hidden overflow-x-auto md:block">
 							<table class="w-full text-left text-sm">
 								<thead class="bg-slate-50 text-slate-500">
 									<tr>
-										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap">Kode Departemen</th>
+										<th class="rounded-tl-lg px-4 py-3.5 font-semibold whitespace-nowrap"
+											>Kode Departemen</th
+										>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Nama Departemen</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Cabang / Kota</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Status</th>
 										<th class="px-4 py-3.5 font-semibold whitespace-nowrap">Alamat Departemen</th>
-										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap">Aksi</th>
+										<th class="rounded-tr-lg px-4 py-3.5 text-right font-semibold whitespace-nowrap"
+											>Aksi</th
+										>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredDepartments as dept}
-										<tr class="transition hover:bg-slate-50/80 {dept.is_active === false ? 'bg-slate-50/40 opacity-75' : ''}">
+										<tr
+											class="transition hover:bg-slate-50/80 {dept.is_active === false
+												? 'bg-slate-50/40 opacity-75'
+												: ''}"
+										>
 											<td class="px-4 py-3.5 whitespace-nowrap">
-												<span class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
+												<span
+													class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700"
+												>
 													{dept.departmen_code || dept.kode_departmen}
 												</span>
 											</td>
-											<td class="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{dept.nama_departmen || dept.name}</td>
-											<td class="px-4 py-3.5 font-semibold text-indigo-900 whitespace-nowrap">{dept.city || dept.cabang || '-'}</td>
+											<td class="px-4 py-3.5 font-bold whitespace-nowrap text-slate-800"
+												>{dept.nama_departmen || dept.name}</td
+											>
+											<td class="px-4 py-3.5 font-semibold whitespace-nowrap text-indigo-900"
+												>{dept.city || '-'}</td
+											>
 											<td class="px-4 py-3.5 whitespace-nowrap">
 												{#if dept.is_active !== false}
-													<span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+													<span
+														class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700"
+													>
 														<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
 														Aktif
 													</span>
 												{:else}
-													<span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+													<span
+														class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600"
+													>
 														<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
 														Non-Aktif
 													</span>
 												{/if}
 											</td>
-											<td class="max-w-xs truncate px-4 py-3.5 text-slate-600">{dept.alamat_departmen || dept.address}</td>
+											<td class="max-w-xs truncate px-4 py-3.5 text-slate-600"
+												>{dept.alamat_departmen || dept.address}</td
+											>
 											<td class="px-4 py-3.5 text-right whitespace-nowrap">
 												<div class="inline-flex items-center justify-end gap-2">
 													<button
 														onclick={() => openEditDeptModal(dept)}
-														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+														class="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs transition hover:border-indigo-300 hover:bg-indigo-100 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none"
 														title="Edit Departemen"
 													>
-														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-															<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="2"
+															stroke="currentColor"
+															class="h-3.5 w-3.5"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+															/>
 														</svg>
 														<span>Edit</span>
 													</button>
@@ -1425,22 +1581,44 @@
 													{#if dept.is_active !== false}
 														<button
 															onclick={() => handleToggleDeptStatus(dept)}
-															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs"
+															class="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 shadow-2xs transition hover:border-amber-300 hover:bg-amber-100 focus:ring-2 focus:ring-amber-500/20 focus:outline-none"
 															title="Nonaktifkan Departemen"
 														>
-															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-																<path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="2"
+																stroke="currentColor"
+																class="h-3.5 w-3.5"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+																/>
 															</svg>
 															<span>Nonaktifkan</span>
 														</button>
 													{:else}
 														<button
 															onclick={() => handleToggleDeptStatus(dept)}
-															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-2xs"
+															class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-2xs transition hover:border-emerald-300 hover:bg-emerald-100 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
 															title="Aktifkan Departemen"
 														>
-															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5">
-																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="2"
+																stroke="currentColor"
+																class="h-3.5 w-3.5"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+																/>
 															</svg>
 															<span>Aktifkan</span>
 														</button>
@@ -1569,8 +1747,12 @@
 {#if showAddUserModal}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"
-		onclick={(e) => { if (e.target === e.currentTarget) closeAddUserModal(); }}
-		onkeydown={(e) => { if (e.key === 'Escape') closeAddUserModal(); }}
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeAddUserModal();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeAddUserModal();
+		}}
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"
@@ -1585,7 +1767,14 @@
 				class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
 				aria-label="Tutup modal"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="2"
+					stroke="currentColor"
+					class="h-4 w-4"
+				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 				</svg>
 			</button>
@@ -1593,19 +1782,34 @@
 			<!-- Header -->
 			<div class="mb-6 flex items-center gap-3">
 				<div class="rounded-2xl bg-indigo-100 p-3 text-indigo-700">
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="1.5"
+						stroke="currentColor"
+						class="h-6 w-6"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z"
+						/>
 					</svg>
 				</div>
 				<div>
 					<h2 class="text-xl font-bold text-slate-900">Tambah User Baru</h2>
-					<p class="text-sm text-slate-500">Buat akun pengguna baru untuk pasien maupun staf rumah sakit.</p>
+					<p class="text-sm text-slate-500">
+						Buat akun pengguna baru untuk pasien maupun staf rumah sakit.
+					</p>
 				</div>
 			</div>
 
 			<!-- Backend Error Banner -->
 			{#if addUserBackendError}
-				<div class="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 shadow-sm">
+				<div
+					class="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 shadow-sm"
+				>
 					<div class="flex gap-3">
 						<span class="text-lg">⚠️</span>
 						<div>
@@ -1663,19 +1867,37 @@
 
 				<!-- Password Checklist Dropdown -->
 				{#if isAddUserPasswordFocused}
-					<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs shadow-sm transition-all duration-300">
+					<div
+						class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs shadow-sm transition-all duration-300"
+					>
 						<p class="mb-1.5 font-medium text-slate-700">Syarat kata sandi:</p>
 						<ul class="space-y-1">
-							<li class="flex items-center gap-1.5 {isAddPwdLength ? 'text-green-600' : 'text-slate-500'}">
+							<li
+								class="flex items-center gap-1.5 {isAddPwdLength
+									? 'text-green-600'
+									: 'text-slate-500'}"
+							>
 								<span>{isAddPwdLength ? '✅' : '❌'}</span> Minimal 6 karakter
 							</li>
-							<li class="flex items-center gap-1.5 {isAddPwdUpper ? 'text-green-600' : 'text-slate-500'}">
+							<li
+								class="flex items-center gap-1.5 {isAddPwdUpper
+									? 'text-green-600'
+									: 'text-slate-500'}"
+							>
 								<span>{isAddPwdUpper ? '✅' : '❌'}</span> Minimal 1 huruf kapital
 							</li>
-							<li class="flex items-center gap-1.5 {isAddPwdLower ? 'text-green-600' : 'text-slate-500'}">
+							<li
+								class="flex items-center gap-1.5 {isAddPwdLower
+									? 'text-green-600'
+									: 'text-slate-500'}"
+							>
 								<span>{isAddPwdLower ? '✅' : '❌'}</span> Minimal 1 huruf kecil
 							</li>
-							<li class="flex items-center gap-1.5 {isAddPwdNum ? 'text-green-600' : 'text-slate-500'}">
+							<li
+								class="flex items-center gap-1.5 {isAddPwdNum
+									? 'text-green-600'
+									: 'text-slate-500'}"
+							>
 								<span>{isAddPwdNum ? '✅' : '❌'}</span> Minimal 1 angka
 							</li>
 						</ul>
@@ -1734,7 +1956,9 @@
 							class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
 						/>
 						{#if addUserForm.tanggalLahir.length > 0}
-							<span class="absolute top-10 right-10 text-sm">{isAddBirthDateValid() ? '✅' : '❌'}</span>
+							<span class="absolute top-10 right-10 text-sm"
+								>{isAddBirthDateValid() ? '✅' : '❌'}</span
+							>
 						{/if}
 					</label>
 				</div>
@@ -1757,7 +1981,8 @@
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium text-slate-700">
-								{addressLabel} <span class="font-bold text-indigo-600">(Pilih Departemen Penugasan)</span>
+								{addressLabel}
+								<span class="font-bold text-indigo-600">(Pilih Departemen Penugasan)</span>
 							</span>
 							{#if departments.length > 2}
 								<input
@@ -1773,7 +1998,8 @@
 						<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
 							{#each modalFilteredDepartments as dept}
 								{@const isSelected =
-									addUserForm.departmenId === dept.id || addUserForm.departmenId === dept.id_departmen}
+									addUserForm.departmenId === dept.id ||
+									addUserForm.departmenId === dept.id_departmen}
 								<button
 									type="button"
 									onclick={() => {
@@ -1802,8 +2028,12 @@
 									</div>
 
 									<div class="mt-2">
-										<p class="text-sm font-bold leading-snug text-slate-900">{dept.nama_departmen || dept.name}</p>
-										<p class="mt-1 flex items-start gap-1 text-xs leading-relaxed text-slate-500 line-clamp-2">
+										<p class="text-sm leading-snug font-bold text-slate-900">
+											{dept.nama_departmen || dept.name}
+										</p>
+										<p
+											class="mt-1 line-clamp-2 flex items-start gap-1 text-xs leading-relaxed text-slate-500"
+										>
 											<span class="shrink-0 text-slate-400">📍</span>
 											<span>{dept.alamat_departmen || dept.address}</span>
 										</p>
@@ -1831,9 +2061,12 @@
 										>
 									</div>
 									<p class="mt-0.5 font-bold text-indigo-800">
-										{selectedDept.nama_departmen || selectedDept.name} ({selectedDept.kode_departmen || selectedDept.departmen_code})
+										{selectedDept.nama_departmen || selectedDept.name} ({selectedDept.kode_departmen ||
+											selectedDept.departmen_code})
 									</p>
-									<p class="mt-0.5 text-slate-600">{selectedDept.alamat_departmen || selectedDept.address}</p>
+									<p class="mt-0.5 text-slate-600">
+										{selectedDept.alamat_departmen || selectedDept.address}
+									</p>
 								</div>
 							</div>
 						{:else}
@@ -1842,7 +2075,8 @@
 							>
 								<span class="text-base">⚠️</span>
 								<span class="font-medium"
-									>Silakan klik salah satu kartu departemen di atas untuk memilih departemen tempat kerja staf.</span
+									>Silakan klik salah satu kartu departemen di atas untuk memilih departemen tempat
+									kerja staf.</span
 								>
 							</div>
 						{/if}
@@ -1857,30 +2091,60 @@
 				>
 					<p class="mb-2 font-medium text-slate-700">Status Validasi Formulir</p>
 					<ul class="grid gap-1.5 text-xs sm:grid-cols-2">
-						<li class="flex items-center gap-2 {isAddNameValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddNameValid ? 'text-green-600' : 'text-slate-500'}"
+						>
 							<span>{isAddNameValid ? '✅' : '❌'}</span> Nama (3-100 karakter)
 						</li>
-						<li class="flex items-center gap-2 {isAddEmailValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddEmailValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddEmailValid ? '✅' : '❌'}</span> Format email valid
 						</li>
-						<li class="flex items-center gap-2 {isAddPasswordValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddPasswordValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddPasswordValid ? '✅' : '❌'}</span> Kata sandi memenuhi syarat (min 6 char)
 						</li>
-						<li class="flex items-center gap-2 {isAddConfirmValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddConfirmValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddConfirmValid ? '✅' : '❌'}</span> Konfirmasi sandi cocok
 						</li>
-						<li class="flex items-center gap-2 {isAddRoleValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddRoleValid ? 'text-green-600' : 'text-slate-500'}"
+						>
 							<span>{isAddRoleValid ? '✅' : '❌'}</span> Role dipilih
 						</li>
-						<li class="flex items-center gap-2 {isAddPhoneValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddPhoneValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddPhoneValid ? '✅' : '❌'}</span> No. HP format Indonesia
 						</li>
-						<li class="flex items-center gap-2 {isAddBirthDateValid() ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddBirthDateValid()
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddBirthDateValid() ? '✅' : '❌'}</span> Tanggal lahir valid (1-120 tahun)
 						</li>
-						<li class="flex items-center gap-2 {isAddAddressValid ? 'text-green-600' : 'text-slate-500'}">
+						<li
+							class="flex items-center gap-2 {isAddAddressValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
 							<span>{isAddAddressValid ? '✅' : '❌'}</span>
-							{addUserForm.role === 'pasien' ? 'Alamat tempat tinggal (min. 10 karakter)' : 'Departemen tempat kerja dipilih'}
+							{addUserForm.role === 'pasien'
+								? 'Alamat tempat tinggal (min. 10 karakter)'
+								: 'Departemen tempat kerja dipilih'}
 						</li>
 					</ul>
 				</div>
@@ -1912,9 +2176,13 @@
 <!-- ========================================= -->
 {#if showUserDetailModal}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
-		onclick={(e) => { if (e.target === e.currentTarget) closeUserDetailModal(); }}
-		onkeydown={(e) => { if (e.key === 'Escape') closeUserDetailModal(); }}
+		class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm sm:p-6"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeUserDetailModal();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeUserDetailModal();
+		}}
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"
@@ -1929,21 +2197,54 @@
 				class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
 				aria-label="Tutup modal"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="2"
+					stroke="currentColor"
+					class="h-4 w-4"
+				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 				</svg>
 			</button>
 
 			<!-- Header -->
 			<div class="mb-6 flex items-center gap-3">
-				<div class="rounded-2xl {isEditUserMode ? 'bg-indigo-100 text-indigo-700' : 'bg-sky-100 text-sky-700'} p-3">
+				<div
+					class="rounded-2xl {isEditUserMode
+						? 'bg-indigo-100 text-indigo-700'
+						: 'bg-sky-100 text-sky-700'} p-3"
+				>
 					{#if isEditUserMode}
-						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="h-6 w-6"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+							/>
 						</svg>
 					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="h-6 w-6"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+							/>
 						</svg>
 					{/if}
 				</div>
@@ -1952,14 +2253,18 @@
 						{isEditUserMode ? 'Edit Informasi User' : 'Detail Spesifik Akun User'}
 					</h2>
 					<p class="text-sm text-slate-500">
-						{isEditUserMode ? 'Perbarui data profil & informasi akun pengguna' : 'Informasi detail dan profil akun pengguna'}
+						{isEditUserMode
+							? 'Perbarui data profil & informasi akun pengguna'
+							: 'Informasi detail dan profil akun pengguna'}
 					</p>
 				</div>
 			</div>
 
 			{#if isFetchingUserDetail}
 				<div class="py-12 text-center">
-					<div class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+					<div
+						class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"
+					></div>
 					<p class="mt-3 text-sm font-semibold text-slate-500">Memuat detail data pengguna...</p>
 				</div>
 			{:else if selectedUserDetail}
@@ -1969,15 +2274,23 @@
 					<!-- ========================================= -->
 					<form class="space-y-4" onsubmit={handleSaveUserEdit}>
 						{#if editUserBackendError}
-							<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
+							<div
+								class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700"
+							>
 								⚠️ {editUserBackendError}
 							</div>
 						{/if}
 
 						<!-- Role Info Tag -->
-						<div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-3">
+						<div
+							class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-3"
+						>
 							<span class="text-xs font-semibold text-slate-500">Role Akun</span>
-							<span class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(selectedUserDetail.role)}">
+							<span
+								class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(
+									selectedUserDetail.role
+								)}"
+							>
 								{getRoleLabel(selectedUserDetail.role)}
 							</span>
 						</div>
@@ -2022,9 +2335,13 @@
 								placeholder="Kosongkan jika tidak ingin mengubah password"
 							/>
 							{#if editUserForm.password.length > 0}
-								<span class="absolute top-9 right-3 text-sm">{isEditPasswordValid ? '✅' : '❌'}</span>
+								<span class="absolute top-9 right-3 text-sm"
+									>{isEditPasswordValid ? '✅' : '❌'}</span
+								>
 							{/if}
-							<span class="mt-1 block text-[11px] text-slate-400">Isi minimal 6 karakter hanya jika ingin mengganti password user.</span>
+							<span class="mt-1 block text-[11px] text-slate-400"
+								>Isi minimal 6 karakter hanya jika ingin mengganti password user.</span
+							>
 						</label>
 
 						<!-- No HP & Tanggal Lahir -->
@@ -2038,7 +2355,9 @@
 									placeholder="081234567890"
 								/>
 								{#if editUserForm.phone.length > 0}
-									<span class="absolute top-9 right-3 text-sm">{isEditPhoneValid ? '✅' : '❌'}</span>
+									<span class="absolute top-9 right-3 text-sm"
+										>{isEditPhoneValid ? '✅' : '❌'}</span
+									>
 								{/if}
 							</label>
 
@@ -2050,7 +2369,9 @@
 									class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
 								/>
 								{#if editUserForm.birthDate.length > 0}
-									<span class="absolute top-9 right-10 text-sm">{isEditBirthDateValid() ? '✅' : '❌'}</span>
+									<span class="absolute top-9 right-10 text-sm"
+										>{isEditBirthDateValid() ? '✅' : '❌'}</span
+									>
 								{/if}
 							</label>
 						</div>
@@ -2060,7 +2381,7 @@
 							<span class="mb-1 block">Status Akun</span>
 							<select
 								bind:value={editUserForm.is_active}
-								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-semibold"
+								class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
 							>
 								<option value={true}>✅ Aktif</option>
 								<option value={false}>❌ Non-Aktif (Di-deaktivasi)</option>
@@ -2075,10 +2396,11 @@
 									bind:value={editUserForm.address}
 									rows="3"
 									class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-									placeholder="Alamat lengkap tempat tinggal pasien..."
-								></textarea>
+									placeholder="Alamat lengkap tempat tinggal pasien..."></textarea>
 								{#if editUserForm.address.length > 0}
-									<span class="absolute top-9 right-3 text-sm">{isEditAddressValid ? '✅' : '❌'}</span>
+									<span class="absolute top-9 right-3 text-sm"
+										>{isEditAddressValid ? '✅' : '❌'}</span
+									>
 								{/if}
 							</label>
 						{:else}
@@ -2086,7 +2408,9 @@
 							<div class="space-y-3">
 								<div class="flex items-center justify-between">
 									<span class="text-sm font-medium text-slate-700">
-										Alamat / Departemen <span class="font-bold text-indigo-600">(Pilih Departemen Penugasan)</span>
+										Alamat / Departemen <span class="font-bold text-indigo-600"
+											>(Pilih Departemen Penugasan)</span
+										>
 									</span>
 									{#if departments.length > 2}
 										<input
@@ -2102,7 +2426,8 @@
 								<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
 									{#each editModalFilteredDepartments as dept}
 										{@const isSelected =
-											editUserForm.departmenId === dept.id || editUserForm.departmenId === dept.id_departmen}
+											editUserForm.departmenId === dept.id ||
+											editUserForm.departmenId === dept.id_departmen}
 										<button
 											type="button"
 											onclick={() => {
@@ -2131,11 +2456,17 @@
 											</div>
 
 											<div class="mt-2">
-												<p class="text-sm font-bold leading-snug text-slate-900">{dept.nama_departmen || dept.name}</p>
-												{#if dept.city || dept.cabang}
-													<p class="text-[11px] font-semibold text-indigo-600">Cabang {dept.city || dept.cabang}</p>
+												<p class="text-sm leading-snug font-bold text-slate-900">
+													{dept.nama_departmen || dept.name}
+												</p>
+												{#if dept.city}
+													<p class="text-[11px] font-semibold text-indigo-600">
+														Cabang {dept.city}
+													</p>
 												{/if}
-												<p class="mt-1 flex items-start gap-1 text-xs leading-relaxed text-slate-500 line-clamp-2">
+												<p
+													class="mt-1 line-clamp-2 flex items-start gap-1 text-xs leading-relaxed text-slate-500"
+												>
 													<span class="shrink-0 text-slate-400">📍</span>
 													<span>{dept.alamat_departmen || dept.address}</span>
 												</p>
@@ -2165,11 +2496,13 @@
 											</div>
 											<p class="mt-0.5 font-semibold text-indigo-900">
 												{selectedEditDept.nama_departmen || selectedEditDept.name}
-												{#if selectedEditDept.city || selectedEditDept.cabang}
-													- Cabang {selectedEditDept.city || selectedEditDept.cabang}
+												{#if selectedEditDept.city}
+													- Cabang {selectedEditDept.city}
 												{/if}
 											</p>
-											<p class="mt-0.5 text-slate-600">{selectedEditDept.alamat_departmen || selectedEditDept.address}</p>
+											<p class="mt-0.5 text-slate-600">
+												{selectedEditDept.alamat_departmen || selectedEditDept.address}
+											</p>
 										</div>
 									</div>
 								{:else}
@@ -2178,7 +2511,8 @@
 									>
 										<span class="text-base">⚠️</span>
 										<span class="font-medium"
-											>Silakan klik salah satu kartu departemen di atas untuk memilih departemen tempat kerja staf.</span
+											>Silakan klik salah satu kartu departemen di atas untuk memilih departemen
+											tempat kerja staf.</span
 										>
 									</div>
 								{/if}
@@ -2193,30 +2527,56 @@
 						>
 							<p class="mb-2 font-medium text-slate-700">Status Validasi Formulir Edit</p>
 							<ul class="grid gap-1.5 text-xs sm:grid-cols-2">
-								<li class="flex items-center gap-2 {isEditNameValid ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditNameValid
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditNameValid ? '✅' : '❌'}</span> Nama (3-100 karakter)
 								</li>
-								<li class="flex items-center gap-2 {isEditEmailValid ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditEmailValid
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditEmailValid ? '✅' : '❌'}</span> Format email valid
 								</li>
-								<li class="flex items-center gap-2 {isEditPasswordValid ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditPasswordValid
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditPasswordValid ? '✅' : '❌'}</span> Password (kosong / min 6 char)
 								</li>
-								<li class="flex items-center gap-2 {isEditPhoneValid ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditPhoneValid
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditPhoneValid ? '✅' : '❌'}</span> No. HP (opsional / format Indonesia)
 								</li>
-								<li class="flex items-center gap-2 {isEditBirthDateValid() ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditBirthDateValid()
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditBirthDateValid() ? '✅' : '❌'}</span> Tanggal lahir valid (1-120 thn)
 								</li>
-								<li class="flex items-center gap-2 {isEditAddressValid ? 'text-green-600' : 'text-slate-500'}">
+								<li
+									class="flex items-center gap-2 {isEditAddressValid
+										? 'text-green-600'
+										: 'text-slate-500'}"
+								>
 									<span>{isEditAddressValid ? '✅' : '❌'}</span>
-									{selectedUserDetail.role === 'pasien' ? 'Alamat tempat tinggal' : 'Departemen penugasan dipilih'}
+									{selectedUserDetail.role === 'pasien'
+										? 'Alamat tempat tinggal'
+										: 'Departemen penugasan dipilih'}
 								</li>
 							</ul>
 						</div>
 
 						<!-- Action Buttons Edit -->
-						<div class="flex gap-3 pt-4 border-t border-slate-100">
+						<div class="flex gap-3 border-t border-slate-100 pt-4">
 							<button
 								type="button"
 								onclick={cancelEditingUser}
@@ -2242,23 +2602,37 @@
 						<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
 							<div class="flex items-center justify-between">
 								<span class="text-xs font-semibold text-slate-500">User Primary ID (DB)</span>
-								<span class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(selectedUserDetail.role)}">
+								<span
+									class="rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${getRoleBadgeClass(
+										selectedUserDetail.role
+									)}"
+								>
 									{getRoleLabel(selectedUserDetail.role)}
 								</span>
 							</div>
-							<p class="mt-1 font-mono text-sm font-bold text-indigo-600 select-all">{selectedUserDetail.id}</p>
+							<p class="mt-1 font-mono text-sm font-bold text-indigo-600 select-all">
+								{selectedUserDetail.id}
+							</p>
 
 							{#if selectedUserDetail.patientUser?.medical_record_number}
-								<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+								<div
+									class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2"
+								>
 									<span class="text-xs font-medium text-slate-500">No. Rekam Medis (MRN)</span>
-									<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.patientUser.medical_record_number}</span>
+									<span class="font-mono text-xs font-bold text-slate-800"
+										>{selectedUserDetail.patientUser.medical_record_number}</span
+									>
 								</div>
 							{/if}
 
 							{#if selectedUserDetail.employeeUser?.staff_code}
-								<div class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2">
+								<div
+									class="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2"
+								>
 									<span class="text-xs font-medium text-slate-500">Kode Staff / Pegawai</span>
-									<span class="font-mono text-xs font-bold text-slate-800">{selectedUserDetail.employeeUser.staff_code}</span>
+									<span class="font-mono text-xs font-bold text-slate-800"
+										>{selectedUserDetail.employeeUser.staff_code}</span
+									>
 								</div>
 							{/if}
 						</div>
@@ -2271,7 +2645,7 @@
 							</div>
 							<div class="rounded-xl border border-slate-200/70 p-3">
 								<span class="text-xs font-medium text-slate-500">Email</span>
-								<p class="font-bold text-slate-900 truncate">{selectedUserDetail.email}</p>
+								<p class="truncate font-bold text-slate-900">{selectedUserDetail.email}</p>
 							</div>
 							<div class="rounded-xl border border-slate-200/70 p-3">
 								<span class="text-xs font-medium text-slate-500">Nomor Telepon</span>
@@ -2280,12 +2654,20 @@
 							<div class="rounded-xl border border-slate-200/70 p-3">
 								<span class="text-xs font-medium text-slate-500">Tanggal Lahir</span>
 								<p class="font-bold text-slate-900">
-									{selectedUserDetail.birth_date ? new Date(selectedUserDetail.birth_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
+									{selectedUserDetail.birth_date
+										? new Date(selectedUserDetail.birth_date).toLocaleDateString('id-ID', {
+												year: 'numeric',
+												month: 'long',
+												day: 'numeric'
+											})
+										: '-'}
 								</p>
 							</div>
 							<div class="rounded-xl border border-slate-200/70 p-3 sm:col-span-2">
 								<span class="text-xs font-medium text-slate-500">Status Akun</span>
-								<p class={`font-bold ${selectedUserDetail.is_active ? 'text-emerald-600' : 'text-rose-600'}`}>
+								<p
+									class={`font-bold ${selectedUserDetail.is_active ? 'text-emerald-600' : 'text-rose-600'}`}
+								>
 									{selectedUserDetail.is_active ? '✅ Aktif' : '❌ Non-Aktif'}
 								</p>
 							</div>
@@ -2295,23 +2677,28 @@
 							<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
 								<span class="text-xs font-medium text-indigo-700">Departemen Penugasan</span>
 								<p class="font-bold text-indigo-950">
-									{selectedUserDetail.employeeUser.departmen.name} ({selectedUserDetail.employeeUser.departmen.departmen_code})
+									{selectedUserDetail.employeeUser.departmen.name} ({selectedUserDetail.employeeUser
+										.departmen.departmen_code})
 								</p>
-								<p class="mt-0.5 text-xs text-slate-600">{selectedUserDetail.employeeUser.departmen.address}</p>
+								<p class="mt-0.5 text-xs text-slate-600">
+									{selectedUserDetail.employeeUser.departmen.address}
+								</p>
 							</div>
 						{/if}
 
 						<div class="rounded-xl border border-slate-200/70 p-3">
 							<span class="text-xs font-medium text-slate-500">Alamat Tempat Tinggal</span>
-							<p class="text-sm font-semibold text-slate-800">{selectedUserDetail.address || '-'}</p>
+							<p class="text-sm font-semibold text-slate-800">
+								{selectedUserDetail.address || '-'}
+							</p>
 						</div>
 
 						<!-- Action Controls Detail View -->
-						<div class="flex flex-wrap gap-2 pt-4 border-t border-slate-100">
+						<div class="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
 							<button
 								type="button"
 								onclick={startEditingUser}
-								class="flex-1 min-w-[120px] rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700"
+								class="min-w-[120px] flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700"
 							>
 								✏️ Edit Data
 							</button>
@@ -2324,7 +2711,7 @@
 										closeUserDetailModal();
 									}
 								}}
-								class={`flex-1 min-w-[120px] rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-md transition ${selectedUserDetail.is_active ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+								class={`min-w-[120px] flex-1 rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-md transition ${selectedUserDetail.is_active ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
 							>
 								{selectedUserDetail.is_active ? '⏸️ Nonaktifkan' : '▶️ Aktifkan'}
 							</button>
@@ -2332,7 +2719,7 @@
 							<button
 								type="button"
 								onclick={closeUserDetailModal}
-								class="w-full sm:w-auto rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+								class="w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
 							>
 								Tutup
 							</button>
@@ -2352,8 +2739,12 @@
 {#if showDeptModal}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm"
-		onclick={(e) => { if (e.target === e.currentTarget) closeDeptModal(); }}
-		onkeydown={(e) => { if (e.key === 'Escape') closeDeptModal(); }}
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeDeptModal();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeDeptModal();
+		}}
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"
@@ -2368,7 +2759,14 @@
 				class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
 				aria-label="Tutup modal"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-4 w-4">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="2"
+					stroke="currentColor"
+					class="h-4 w-4"
+				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 				</svg>
 			</button>
@@ -2376,20 +2774,39 @@
 			<!-- Header -->
 			<div class="mb-6 flex items-center gap-3">
 				<div class="rounded-2xl bg-indigo-100 p-3 text-indigo-700">
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-6 w-6">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75" />
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="1.5"
+						stroke="currentColor"
+						class="h-6 w-6"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.75m-.75 3h.75m-.75 3h.75"
+						/>
 					</svg>
 				</div>
 				<div>
-					<h2 class="text-xl font-bold text-slate-900">{isEditDept ? 'Edit Departemen' : 'Tambah Departemen Baru'}</h2>
-					<p class="text-sm text-slate-500">{isEditDept ? 'Perbarui informasi departemen' : 'Daftarkan departemen atau unit pelayanan baru'}</p>
+					<h2 class="text-xl font-bold text-slate-900">
+						{isEditDept ? 'Edit Departemen' : 'Tambah Departemen Baru'}
+					</h2>
+					<p class="text-sm text-slate-500">
+						{isEditDept
+							? 'Perbarui informasi departemen'
+							: 'Daftarkan departemen atau unit pelayanan baru'}
+					</p>
 				</div>
 			</div>
 
 			<!-- Form -->
 			<form class="space-y-4" onsubmit={handleSaveDept}>
 				{#if deptModalError}
-					<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
+					<div
+						class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700"
+					>
 						⚠️ {deptModalError}
 					</div>
 				{/if}
@@ -2400,7 +2817,7 @@
 					<input
 						bind:value={deptForm.code}
 						type="text"
-						class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 uppercase"
+						class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm uppercase shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
 						placeholder="DPT-POLI-UMUM"
 					/>
 					{#if deptForm.code.length > 0}
@@ -2440,8 +2857,7 @@
 						bind:value={deptForm.address}
 						rows="3"
 						class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-						placeholder="Gedung Utama Lantai 1, RS Medika Sehat Jakarta"
-					></textarea>
+						placeholder="Gedung Utama Lantai 1, RS Medika Sehat Jakarta"></textarea>
 					{#if deptForm.address.length > 0}
 						<span class="absolute top-10 right-3 text-sm">{isDeptAddressValid ? '✅' : '❌'}</span>
 					{/if}
@@ -2467,14 +2883,29 @@
 				>
 					<p class="mb-2 font-medium text-slate-700">Status Validasi Formulir</p>
 					<ul class="space-y-1.5 text-xs">
-						<li class="flex items-center gap-2 {isDeptCodeValid ? 'text-green-600' : 'text-slate-500'}">
-							<span>{isDeptCodeValid ? '✅' : '❌'}</span> Kode Departemen valid (3-20 karakter, alfanumerik & tanda hubung)
+						<li
+							class="flex items-center gap-2 {isDeptCodeValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
+							<span>{isDeptCodeValid ? '✅' : '❌'}</span> Kode Departemen valid (3-20 karakter, alfanumerik
+							& tanda hubung)
 						</li>
-						<li class="flex items-center gap-2 {isDeptNameValid ? 'text-green-600' : 'text-slate-500'}">
-							<span>{isDeptNameValid ? '✅' : '❌'}</span> Nama Departemen terisi dengan benar (3-100 karakter)
+						<li
+							class="flex items-center gap-2 {isDeptNameValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
+							<span>{isDeptNameValid ? '✅' : '❌'}</span> Nama Departemen terisi dengan benar (3-100
+							karakter)
 						</li>
-						<li class="flex items-center gap-2 {isDeptAddressValid ? 'text-green-600' : 'text-slate-500'}">
-							<span>{isDeptAddressValid ? '✅' : '❌'}</span> Alamat Departemen terisi dengan benar (min. 10 karakter)
+						<li
+							class="flex items-center gap-2 {isDeptAddressValid
+								? 'text-green-600'
+								: 'text-slate-500'}"
+						>
+							<span>{isDeptAddressValid ? '✅' : '❌'}</span> Alamat Departemen terisi dengan benar (min.
+							10 karakter)
 						</li>
 					</ul>
 				</div>
