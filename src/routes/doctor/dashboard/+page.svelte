@@ -3,136 +3,118 @@
 	import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
 	import { validateSession } from '$lib/utils/getProfile';
-	import { api } from '$lib/api/api';
-	import { authState } from '$lib/stores/auth.svelte';
 	import DashboardSkeletonDokter from '$lib/components/skeleton/DashboardSkeletonDokter.svelte';
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
+	import {
+		doctorPracticeStore,
+		type DoctorSchedule,
+		type PracticeSessionCard,
+		type RegisteredPatient,
+		type DoctorExaminedPatient
+	} from '$lib/stores/doctorPractice.svelte';
 
 	type DashboardUser = { role: string; name: string; id: string; user_code?: string };
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
 
+	let currentUser = $state<DashboardUser>({ role: 'dokter', name: '', id: '', user_code: '' });
+	let activeMenu = $state('beranda');
+	let isSidebarOpen = $state(false);
+
+	const todayDateStr = new Date().toISOString().split('T')[0];
+	const todayDateDisplay = new Date().toLocaleDateString('id-ID', {
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	});
+
+	// =========================================================================
+	// INITIALIZATION & STORE DATA FETCHING
+	// =========================================================================
+
 	onMount(async () => {
 		try {
 			const profile = await validateSession();
 
-			// Cek role secara ketat di client-side
 			if (profile.role.toLowerCase() !== 'doctor') {
 				isForbidden = true;
 			} else {
 				currentUser = profile;
+				await Promise.allSettled([
+					doctorPracticeStore.fetchSchedules(),
+					doctorPracticeStore.fetchTodayPatients(),
+					doctorPracticeStore.fetchPatientHistory()
+				]);
 			}
 		} catch (err) {
-			console.error('Gagal verifikasi sesi:', err);
-			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
+			console.error('Gagal verifikasi sesi dokter:', err);
+			isForbidden = true;
 		} finally {
 			isLoading = false;
 		}
 	});
 
-	let currentUser = $state<DashboardUser>({ role: 'dokter', name: '', id: '', user_code: '' });
+	// Derived reactive states based on store single source of truth
+	function getScheduleStatus(sched: DoctorSchedule): 'Dimulai' | 'Akan Datang' | 'Selesai' {
+		if (sched.date < todayDateStr) return 'Selesai';
+		if (sched.date > todayDateStr) return 'Akan Datang';
+		return 'Dimulai';
+	}
 
-	let activeMenu = $state('beranda');
-	let isSidebarOpen = $state(false);
+	let todaySchedules = $derived(
+		doctorPracticeStore.schedules.filter((s: DoctorSchedule) => s.date === todayDateStr)
+	);
 
-	// --- DATA DUMMY ANTREAN PASIEN ---
-	let patientQueue = $state([
-		{
-			id: 'RM-099',
-			name: 'Ayu Putri',
-			age: 24,
-			time: '08:30',
-			status: 'Sedang Diperiksa',
-			complaint: 'Demam tinggi 3 hari',
-			isUrgent: false
-		},
-		{
-			id: 'RM-102',
-			name: 'Bapak Sudirman',
-			age: 58,
-			time: '09:00',
-			status: 'Menunggu',
-			complaint: 'Nyeri dada, sesak napas',
-			isUrgent: true
-		},
-		{
-			id: 'RM-105',
-			name: 'Siti Aminah',
-			age: 32,
-			time: '09:30',
-			status: 'Menunggu',
-			complaint: 'Kontrol rutin kehamilan',
-			isUrgent: false
-		}
-	]);
+	let todayPatients = $derived(
+		doctorPracticeStore.todayPatients.length > 0
+			? doctorPracticeStore.todayPatients
+			: todaySchedules.flatMap((s: DoctorSchedule) => s.patients)
+	);
 
-	let activePatient = $derived(patientQueue[0]); // Simulasi pasien pertama adalah yang sedang diperiksa
+	let activePatient = $derived(
+		todayPatients.find((p: RegisteredPatient) => p.status === 'Sedang Diperiksa') || todayPatients[0]
+	);
 
-	// --- STATE FORM RESEP (Otomatis terisi dari pasien aktif) ---
-	let diagnosis = $state('Suspect Tipes (Observasi)');
+	let todayStats = $derived({
+		total: todayPatients.length,
+		finished: todayPatients.filter((p: RegisteredPatient) => p.status === 'Selesai').length,
+		waiting: todayPatients.filter((p: RegisteredPatient) => p.status === 'Menunggu').length,
+		examining: todayPatients.filter((p: RegisteredPatient) => p.status === 'Sedang Diperiksa').length
+	});
+
+	// --- FORM RESEP & KATALOG OBAT ---
+	let diagnosis = $state('Hasil Pemeriksaan Medis');
 	let searchQuery = $state('');
 	let selectedMedicines = $state<Array<{ name: string; usage: string }>>([]);
 	let receiptVisible = $state(false);
-	let printMode = $state(false);
 
 	const medicineCatalog = [
-		{
-			name: 'Paracetamol 500mg',
-			stock: 42,
-			category: 'Analgesik',
-			availability: 'Tersedia',
-			alternative: 'Ibuprofen',
-			notes: 'Penurun demam'
-		},
-		{
-			name: 'Amoxicillin 500mg',
-			stock: 18,
-			category: 'Antibiotik',
-			availability: 'Tersedia',
-			alternative: 'Cefixime',
-			notes: 'Infeksi ringan-sedang'
-		},
-		{
-			name: 'Omeprazole 20mg',
-			stock: 7,
-			category: 'Pencernaan',
-			availability: 'Kritis',
-			alternative: 'Pantoprazole',
-			notes: 'Asam lambung'
-		},
-		{
-			name: 'Isosorbide Dinitrate 5mg',
-			stock: 15,
-			category: 'Jantung',
-			availability: 'Tersedia',
-			alternative: 'Nitroglycerin',
-			notes: 'Nyeri dada angina'
-		}
+		{ name: 'Paracetamol 500mg', category: 'Analgesik', notes: 'Penurun demam & pereda nyeri' },
+		{ name: 'Amoxicillin 500mg', category: 'Antibiotik', notes: 'Infeksi bakteri ringan-sedang' },
+		{ name: 'Omeprazole 20mg', category: 'Pencernaan', notes: 'Menurunkan asam lambung' },
+		{ name: 'Isosorbide Dinitrate 5mg', category: 'Jantung', notes: 'Nyeri dada angina' },
+		{ name: 'Cetirizine 10mg', category: 'Antihistamin', notes: 'Alergi & gatal' },
+		{ name: 'Vitamin C 500mg', category: 'Suplemen', notes: 'Daya tahan tubuh' }
 	];
 
 	let filteredMedicines = $derived(
 		medicineCatalog.filter((med) => {
-			const query = searchQuery.toLowerCase();
-			return (
-				med.name.toLowerCase().includes(query) ||
-				med.category.toLowerCase().includes(query) ||
-				med.notes.toLowerCase().includes(query)
-			);
+			const q = searchQuery.toLowerCase();
+			return med.name.toLowerCase().includes(q) || med.category.toLowerCase().includes(q) || med.notes.toLowerCase().includes(q);
 		})
 	);
 
 	function toggleMedicine(name: string) {
 		const existing = selectedMedicines.find((item) => item.name === name);
 		if (existing) selectedMedicines = selectedMedicines.filter((item) => item.name !== name);
-		else selectedMedicines = [...selectedMedicines, { name, usage: '' }];
+		else selectedMedicines = [...selectedMedicines, { name, usage: '3x1 Tablet Setelah Makan' }];
 	}
 
 	function updateMedicineUsage(name: string, usage: string) {
-		selectedMedicines = selectedMedicines.map((item) =>
-			item.name === name ? { ...item, usage } : item
-		);
+		selectedMedicines = selectedMedicines.map((item) => (item.name === name ? { ...item, usage } : item));
 	}
 
 	function printReceipt() {
@@ -140,105 +122,219 @@
 		setTimeout(() => window.print(), 150);
 	}
 
-	// --- DUMMY DATA: MENU JADWAL PRAKTIK (DOKTER) ---
-	let doctorAppointments = $state([
-		{
-			id: 'AP-001',
-			patientName: 'Bapak Sudirman',
-			date: 'Hari Ini',
-			time: '09:00 WIB',
-			status: 'Menunggu',
-			type: 'Konsultasi Rutin'
-		},
-		{
-			id: 'AP-002',
-			patientName: 'Siti Aminah',
-			date: 'Hari Ini',
-			time: '09:30 WIB',
-			status: 'Menunggu',
-			type: 'Kontrol Kehamilan'
-		},
-		{
-			id: 'AP-003',
-			patientName: 'Ayu Putri',
-			date: 'Besok, 31 Jul',
-			time: '10:00 WIB',
-			status: 'Terjadwal',
-			type: 'Pemeriksaan Lab'
-		},
-		{
-			id: 'AP-004',
-			patientName: 'Budi Santoso',
-			date: 'Besok, 31 Jul',
-			time: '11:00 WIB',
-			status: 'Dibatalkan',
-			type: 'Tindakan Ringan'
-		}
-	]);
-	// State untuk form atur jadwal (CRUD Sederhana)
-	let scheduleForm = $state({
-		date: '',
-		startTime: '',
-		endTime: '',
-		quota: 10
-	});
-	function handleSaveSchedule(e: Event) {
-		e.preventDefault();
-		alert('Jadwal praktik berhasil diperbarui!');
-		// Logika simpan ke database nanti ada di sini
+	// --- TOAST NOTIFICATIONS & FEEDBACK ---
+	let toastNotification = $state<{ type: 'success' | 'error'; message: string } | null>(null);
+	function showToast(message: string, type: 'success' | 'error' = 'success') {
+		toastNotification = { type, message };
+		setTimeout(() => {
+			if (toastNotification?.message === message) {
+				toastNotification = null;
+			}
+		}, 6000);
 	}
-	function cancelAppointment(id: string) {
-		if (confirm('Anda yakin ingin membatalkan janji temu ini? Pasien akan menerima notifikasi.')) {
-			doctorAppointments = doctorAppointments.map((app) =>
-				app.id === id ? { ...app, status: 'Dibatalkan' } : app
-			);
+
+	// --- STORE ACTIONS FOR APPOINTMENT STATUS & SLOTS DENGAN PROTEKSI SPAM ---
+	let slotActionLoadingMap = $state<Record<string, boolean>>({});
+
+	async function handleCallPatient(appointmentId: string) {
+		try {
+			await doctorPracticeStore.updateAppointmentStatus(appointmentId, 'CONFIRMED');
+			showToast('Pasien berhasil dipanggil ke ruang pemeriksaan!', 'success');
+		} catch (err: any) {
+			showToast('Gagal memanggil pasien:\n' + err.message, 'error');
 		}
 	}
-	// --- STATE MENU DAFTAR PASIEN (DOKTER) ---
-	let patientSearchQuery = $state('');
-	let patientList = $state([
-		{
-			id: 'RM-099',
-			name: 'Ayu Putri',
-			age: 24,
-			gender: 'Perempuan',
-			lastVisit: '30 Juli 2026',
-			diagnosis: 'Demam dan batuk ringan',
-			status: 'Rawat Jalan',
-			phone: '0812-3456-7890'
-		},
-		{
-			id: 'RM-102',
-			name: 'Bapak Sudirman',
-			age: 58,
-			gender: 'Laki-laki',
-			lastVisit: '28 Juli 2026',
-			diagnosis: 'Hipertensi Stage 2',
-			status: 'Kontrol Rutin',
-			phone: '0813-9876-5432'
-		},
-		{
-			id: 'RM-105',
-			name: 'Siti Aminah',
-			age: 32,
-			gender: 'Perempuan',
-			lastVisit: '15 Juni 2026',
-			diagnosis: 'Observasi Kehamilan Trimester 2',
-			status: 'Selesai',
-			phone: '0821-1122-3344'
+
+	async function handleFinishPatient(appointmentId: string) {
+		try {
+			await doctorPracticeStore.updateAppointmentStatus(appointmentId, 'COMPLETED');
+			receiptVisible = true;
+			showToast('Pemeriksaan pasien berhasil diselesaikan!', 'success');
+		} catch (err: any) {
+			showToast('Gagal menyelesaikan pemeriksaan:\n' + err.message, 'error');
 		}
+	}
+
+	async function handleToggleSlotActive(slotId: string, isActive: boolean) {
+		const key = `active_${slotId}`;
+		if (slotActionLoadingMap[key]) return;
+		slotActionLoadingMap[key] = true;
+
+		try {
+			await doctorPracticeStore.toggleSlotActive(slotId, isActive);
+			showToast(isActive ? 'Slot praktik berhasil diaktifkan!' : 'Slot praktik dinonaktifkan.', 'success');
+		} catch (err: any) {
+			showToast('Gagal mengubah status aktif slot:\n' + err.message, 'error');
+		} finally {
+			slotActionLoadingMap[key] = false;
+		}
+	}
+
+	async function handleUpdateSlotStatus(slotId: string, currentStatus: 'OPEN' | 'CLOSED') {
+		const key = `status_${slotId}`;
+		if (slotActionLoadingMap[key]) return;
+		slotActionLoadingMap[key] = true;
+
+		try {
+			const nextStatus = currentStatus === 'OPEN' ? 'CLOSED' : 'OPEN';
+			await doctorPracticeStore.updateSlotStatus(slotId, nextStatus);
+			showToast(`Status slot berhasil diubah menjadi ${nextStatus === 'OPEN' ? 'OPEN (Terbuka)' : 'CLOSED (Ditutup)'}!`, 'success');
+		} catch (err: any) {
+			showToast('Gagal mengubah status slot:\n' + err.message, 'error');
+		} finally {
+			slotActionLoadingMap[key] = false;
+		}
+	}
+
+	// --- MODAL DRAWER LIST PASIEN PER SLOT JADWAL ---
+	let selectedScheduleModal = $state<DoctorSchedule | null>(null);
+	let isScheduleModalOpen = $state(false);
+
+	function openSchedulePatients(schedule: DoctorSchedule) {
+		selectedScheduleModal = schedule;
+		isScheduleModalOpen = true;
+	}
+
+	function closeSchedulePatients() {
+		isScheduleModalOpen = false;
+		selectedScheduleModal = null;
+	}
+
+	// --- MODAL REKAM MEDIS LENGKAP PASIEN ---
+	let selectedPatientRecordModal = $state<DoctorExaminedPatient | null>(null);
+	let isPatientRecordModalOpen = $state(false);
+
+	function openPatientRecordModal(patientId: string) {
+		const found = doctorPracticeStore.examinedPatients.find(
+			(p: DoctorExaminedPatient) => p.patientId === patientId || p.name.toLowerCase().includes(patientId.toLowerCase())
+		);
+
+		if (found) {
+			selectedPatientRecordModal = found;
+		} else {
+			selectedPatientRecordModal = {
+				patientId: patientId,
+				name: activePatient ? activePatient.patientName : 'Pasien MedSync',
+				age: activePatient ? activePatient.age : 30,
+				gender: activePatient ? activePatient.gender : 'Perempuan',
+				phone: activePatient ? activePatient.phone : '0812-0000-1111',
+				address: 'Jl. RS Medika Utama, Surabaya',
+				totalVisits: 1,
+				lastVisitDate: todayDateDisplay,
+				primaryDiagnosis: diagnosis,
+				histories: [
+					{
+						id: 'REC-CURRENT',
+						visitDate: `${todayDateDisplay} (${activePatient?.timeSlot || 'Sesi Praktik'})`,
+						sessionType: 'Pemeriksaan Rutin Dokter Spesialis',
+						complaint: activePatient ? activePatient.complaint : 'Pemeriksaan Kesehatan',
+						diagnosis: diagnosis,
+						prescription: selectedMedicines.length
+							? selectedMedicines
+							: [{ name: 'Paracetamol 500mg', usage: '3x1 Tablet' }],
+						vitalSigns: activePatient?.vitalSigns || 'TD: 120/80 mmHg | Suhu: 36.8°C',
+						doctorNotes: 'Pasien telah diperiksa secara menyeluruh. Disarankan istirahat cukup.',
+						status: 'Rawat Jalan'
+					}
+				]
+			};
+		}
+		isPatientRecordModalOpen = true;
+	}
+
+	function closePatientRecordModal() {
+		isPatientRecordModalOpen = false;
+		selectedPatientRecordModal = null;
+	}
+
+	// --- FORM PEMBUATAN JADWAL PRAKTEK MULTI-SLOT (BATCH) ---
+	let scheduleFormMode = $state<'single' | 'batch'>('batch');
+	let targetScheduleDate = $state(todayDateStr);
+	let batchSlots = $state<Array<{ sessionName: string; startTime: string; endTime: string; quota: number }>>([
+		{ sessionName: 'Sesi 1 (Pagi Awal)', startTime: '08:00', endTime: '10:00', quota: 10 },
+		{ sessionName: 'Sesi 2 (Pagi Akhir)', startTime: '10:00', endTime: '12:00', quota: 10 },
+		{ sessionName: 'Sesi 3 (Siang)', startTime: '13:00', endTime: '15:00', quota: 8 },
+		{ sessionName: 'Sesi 4 (Sore)', startTime: '15:00', endTime: '17:00', quota: 8 },
+		{ sessionName: 'Sesi 5 (Malam)', startTime: '18:00', endTime: '20:00', quota: 6 }
 	]);
 
-	let filteredPatients = $derived(
-		patientList.filter(
-			(p) =>
+	function addBatchSlotRow() {
+		batchSlots = [
+			...batchSlots,
+			{ sessionName: `Sesi ${batchSlots.length + 1}`, startTime: '08:00', endTime: '10:00', quota: 10 }
+		];
+	}
+
+	function removeBatchSlotRow(index: number) {
+		if (batchSlots.length > 1) {
+			batchSlots = batchSlots.filter((_, i) => i !== index);
+		}
+	}
+
+	function handleGenerate5SlotsPreset() {
+		batchSlots = [
+			{ sessionName: 'Sesi 1 (Pagi Awal)', startTime: '08:00', endTime: '10:00', quota: 10 },
+			{ sessionName: 'Sesi 2 (Pagi Akhir)', startTime: '10:00', endTime: '12:00', quota: 10 },
+			{ sessionName: 'Sesi 3 (Siang)', startTime: '13:00', endTime: '15:00', quota: 8 },
+			{ sessionName: 'Sesi 4 (Sore)', startTime: '15:00', endTime: '17:00', quota: 8 },
+			{ sessionName: 'Sesi 5 (Malam)', startTime: '18:00', endTime: '20:00', quota: 6 }
+		];
+	}
+
+	async function handleSaveSchedule(e: Event) {
+		e.preventDefault();
+
+		const slotsPayload = batchSlots.map((slot) => ({
+			name: slot.sessionName,
+			start_hour: slot.startTime,
+			end_hour: slot.endTime,
+			status_slot: 'OPEN' as const,
+			is_active: true,
+			max_patient: Number(slot.quota)
+		}));
+
+		try {
+			const res = await doctorPracticeStore.createPracticeSchedule({
+				practice_date: targetScheduleDate,
+				slots: slotsPayload
+			});
+			showToast(res.message || `Berhasil membuat slot jadwal praktik!`, 'success');
+		} catch (err: any) {
+			showToast('Gagal membuat jadwal praktik:\n' + err.message, 'error');
+		}
+	}
+
+	// Filter Tab Jadwal Per Sesi
+	function getSessionCardStatus(card: PracticeSessionCard): 'Dimulai' | 'Akan Datang' | 'Selesai' {
+		if (card.date < todayDateStr) return 'Selesai';
+		if (card.date > todayDateStr) return 'Akan Datang';
+		return 'Dimulai';
+	}
+
+	let scheduleTabFilter = $state<'semua' | 'hari_ini' | 'akan_datang' | 'selesai'>('semua');
+	let filteredSessionCards = $derived(
+		doctorPracticeStore.sessionCards.filter((card: PracticeSessionCard) => {
+			const st = getSessionCardStatus(card);
+			if (scheduleTabFilter === 'hari_ini') return card.date === todayDateStr;
+			if (scheduleTabFilter === 'akan_datang') return st === 'Akan Datang';
+			if (scheduleTabFilter === 'selesai') return st === 'Selesai';
+			return true;
+		})
+	);
+
+	// Search Pasien Database
+	let patientSearchQuery = $state('');
+	let filteredPatientDatabase = $derived(
+		doctorPracticeStore.examinedPatients.filter(
+			(p: DoctorExaminedPatient) =>
 				p.name.toLowerCase().includes(patientSearchQuery.toLowerCase()) ||
-				p.id.toLowerCase().includes(patientSearchQuery.toLowerCase())
+				p.patientId.toLowerCase().includes(patientSearchQuery.toLowerCase()) ||
+				p.primaryDiagnosis.toLowerCase().includes(patientSearchQuery.toLowerCase())
 		)
 	);
 </script>
 
-<Title title="Dokter | Dashboard" />
+<Title title="Dokter | Dashboard MedSync" />
 
 <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-900">
 	{#if isLoading}
@@ -255,261 +351,254 @@
 		/>
 	{/if}
 
-	<main class="flex h-full flex-1 flex-col overflow-hidden">
+	<main class="relative flex h-full flex-1 flex-col overflow-hidden">
+		<!-- FLOATING TOAST NOTIFICATION BANNER -->
+		{#if toastNotification}
+			<div class="fixed top-5 right-5 z-50 max-w-md animate-fade-in shadow-2xl transition-all">
+				<div
+					class={`flex items-start gap-3.5 rounded-2xl border p-4.5 shadow-xl backdrop-blur-md ${
+						toastNotification.type === 'success'
+							? 'border-emerald-200 bg-slate-900/95 text-emerald-300 ring-1 ring-emerald-500/30'
+							: 'border-rose-300 bg-rose-950/95 text-rose-100 ring-1 ring-rose-500/40'
+					}`}
+				>
+					<span class="mt-0.5 text-xl">{toastNotification.type === 'success' ? '✨' : '⚠️'}</span>
+					<div class="flex-1 pr-2">
+						<h4 class="text-[11px] font-black uppercase tracking-wider text-slate-300">
+							{toastNotification.type === 'success' ? 'Pemberitahuan Sukses' : 'Pemberitahuan Sistem'}
+						</h4>
+						<p class="mt-1 whitespace-pre-line text-xs font-semibold leading-relaxed">
+							{toastNotification.message}
+						</p>
+					</div>
+					<!-- svelte-ignore a11y_consider_explicit_label -->
+					<button
+						onclick={() => (toastNotification = null)}
+						class="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+					>
+						&times;
+					</button>
+				</div>
+			</div>
+		{/if}
 		<!-- Header Mobile -->
 		{#if !isForbidden}
-			<header
-				class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden"
-			>
+			<header class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 shadow-sm lg:hidden">
 				<!-- svelte-ignore a11y_consider_explicit_label -->
 				<button onclick={() => (isSidebarOpen = true)} class="text-sky-700">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke-width="2"
-						stroke="currentColor"
-						class="h-7 w-7"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"
-						/></svg
-					>
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-7 w-7">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+					</svg>
 				</button>
-				<div
-					class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
-				>
+				<div class="rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700">
 					ID: {currentUser.user_code || currentUser.id}
 				</div>
 			</header>
 		{/if}
 
-		<div class={!isForbidden ? 'flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-10' : ''}>
+		<div class={!isForbidden ? 'flex-1 overflow-y-auto px-5 py-6 md:px-8 lg:px-10 lg:py-8' : ''}>
 			{#if isLoading}
 				<DashboardSkeletonDokter />
 			{:else if isForbidden}
 				<ErrorState status={403} />
 			{:else}
-				<!-- HIGHLIGHT BANNER: PANEL DOKTER -->
-				<div
-					class="relative mb-8 overflow-hidden rounded-[24px] bg-gradient-to-br from-slate-900 via-indigo-950 to-sky-900 p-6 text-white shadow-xl sm:p-8"
-				>
-					<!-- Efek Cahaya Latar -->
-					<div
-						class="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-sky-400/20 blur-3xl"
-					></div>
-					<div class="absolute right-5 bottom-0 opacity-10">
-						<!-- Ikon Stetoskop Watermark -->
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="h-32 w-32"
-						>
-							<path
-								fill-rule="evenodd"
-								d="M11.966 1.488a.75.75 0 01.956.444l.808 2.022c.241.603.266 1.258.117 1.868l-.888 3.555a.75.75 0 01-.84.545l-4.548-.758a.75.75 0 01-.58-.937l1.092-4.368c.137-.549.46-1.01.91-1.309l2.53-1.686a.75.75 0 01.443-.376zM4.774 9.176a.75.75 0 00-1.042.278A9.97 9.97 0 003 14.5a10.024 10.024 0 004.225 8.163.75.75 0 00.866-1.242 8.524 8.524 0 01-3.591-6.921c0-1.57.426-3.045 1.168-4.282a.75.75 0 00-.275-1.042zM21 14.5a.75.75 0 01-1.5 0c0-1.57-.426-3.045-1.168-4.282a.75.75 0 00-1.317.764A9.97 9.97 0 0119.5 14.5c0 2.454-.882 4.702-2.345 6.448a.75.75 0 001.129 1.004A11.464 11.464 0 0021 14.5z"
-								clip-rule="evenodd"
-							/>
-							<path d="M12 14.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" />
-						</svg>
-					</div>
+				<!-- HIGHLIGHT BANNER: PANEL DOKTER & HARI AKTIF -->
+				<div class="relative mb-8 overflow-hidden rounded-[24px] bg-gradient-to-br from-slate-900 via-indigo-950 to-sky-900 p-6 text-white shadow-xl sm:p-8">
+					<div class="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-sky-400/20 blur-3xl"></div>
 
-					<div
-						class="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between"
-					>
+					<div class="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
 						<div>
-							<!-- Indikator Status Nyala -->
 							<div class="mb-3 flex items-center gap-2">
 								<span class="relative flex h-2.5 w-2.5">
-									<span
-										class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"
-									></span>
-									<span
-										class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
-									></span>
+									<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+									<span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
 								</span>
 								<p class="text-[11px] font-bold tracking-widest text-sky-200 uppercase">
-									Mode Praktik Aktif
+									Mode Praktik Aktif &bull; {todayDateDisplay}
 								</p>
 							</div>
 
-							<h1 class="text-3xl font-black sm:text-4xl">Halo, dr. {currentUser.name}! 🩺</h1>
+							<h1 class="text-3xl font-black sm:text-4xl">Halo, dr. {currentUser.name || 'Dokter'}! 🩺</h1>
 							<p class="mt-2 text-sm text-slate-300 sm:text-base">
-								Selamat bertugas di RS Medika Sehat. Terdapat <strong class="text-white"
-									>{patientQueue.length - 1} pasien</strong
-								> menunggu antrean Anda saat ini.
+								Prioritas data hari ini: Terdapat <strong class="text-white">{todayStats.waiting} pasien menunggu antrean</strong> dari total {todayStats.total} pendaftar hari ini.
 							</p>
 						</div>
 
-						<!-- Info ID Dokter yang menonjol -->
-						<div class="flex flex-col items-start sm:items-end">
-							<div
-								class="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 shadow-inner backdrop-blur-md"
-							>
-								<p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
-									Identitas Dokter
-								</p>
+						<div class="flex flex-col items-start gap-2 sm:items-end">
+							<div class="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 shadow-inner backdrop-blur-md">
+								<p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">SIP / ID Dokter</p>
 								<p class="mt-0.5 text-lg font-black tracking-wider text-white">{currentUser.user_code || currentUser.id}</p>
 							</div>
 						</div>
 					</div>
 				</div>
+
 				<!-- ===================== -->
-				<!-- MENU 1: BERANDA	   -->
+				<!-- MENU 1: BERANDA       -->
 				<!-- ===================== -->
 				{#if activeMenu === 'beranda'}
-					<!-- 1. STATISTIK CEPAT (Dengan Warna Performa) -->
-					<section class="mb-6 grid gap-4 sm:grid-cols-3">
+					<!-- 1. STATISTIK CEPAT PASIEN HARI INI -->
+					<section class="mb-6 grid gap-4 sm:grid-cols-4">
 						<div class="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
 							<div class="flex items-center gap-3">
-								<div
-									class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-600"
-								>
-									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"
-										><path
-											d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"
-										/></svg
-									>
+								<div class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-600">
+									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+										<path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+									</svg>
 								</div>
-								<p class="text-sm font-bold text-slate-600">Total Pasien</p>
+								<p class="text-sm font-bold text-slate-600">Pasien Hari Ini</p>
 							</div>
-							<p class="mt-3 text-3xl font-black text-slate-800">
-								24 <span class="text-sm font-medium text-slate-400">/ hari ini</span>
-							</p>
+							<p class="mt-3 text-3xl font-black text-slate-800">{todayStats.total} <span class="text-xs font-semibold text-slate-400">terdaftar</span></p>
 						</div>
+
 						<div class="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
 							<div class="flex items-center gap-3">
-								<div
-									class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
-								>
-									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"
-										><path
-											fill-rule="evenodd"
-											d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-											clip-rule="evenodd"
-										/></svg
-									>
+								<div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+									</svg>
 								</div>
-								<p class="text-sm font-bold text-slate-600">Selesai Diperiksa</p>
+								<p class="text-sm font-bold text-slate-600">Sedang Diperiksa</p>
 							</div>
-							<p class="mt-3 text-3xl font-black text-emerald-600">18</p>
+							<p class="mt-3 text-3xl font-black text-emerald-600">{todayStats.examining}</p>
 						</div>
+
 						<div class="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
 							<div class="flex items-center gap-3">
-								<div
-									class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600"
-								>
-									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"
-										><path
-											fill-rule="evenodd"
-											d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-											clip-rule="evenodd"
-										/></svg
-									>
+								<div class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+									</svg>
 								</div>
 								<p class="text-sm font-bold text-slate-600">Menunggu Antrean</p>
 							</div>
-							<p class="mt-3 text-3xl font-black text-amber-600">6</p>
+							<p class="mt-3 text-3xl font-black text-amber-600">{todayStats.waiting}</p>
 						</div>
-					</section>
 
-					<!-- 2. HIGHLIGHT MODULE: PASIEN SAAT INI (Sangat Eye-catching) -->
-					<section
-						class="mb-6 overflow-hidden rounded-[24px] border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-6 text-white shadow-xl lg:p-8"
-					>
-						<div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-							<div>
-								<div class="mb-3 flex items-center gap-3">
-									<span class="relative flex h-3 w-3"
-										><span
-											class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"
-										></span><span class="relative inline-flex h-3 w-3 rounded-full bg-emerald-500"
-										></span></span
-									>
-									<p class="text-xs font-bold tracking-widest text-emerald-400 uppercase">
-										Sedang Diperiksa
-									</p>
+						<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+							<div class="flex items-center gap-3">
+								<div class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+									</svg>
 								</div>
-								<h2 class="text-3xl font-black">
-									{activePatient.name}
-									<span class="text-xl font-medium text-slate-400">({activePatient.age} thn)</span>
-								</h2>
-								<p class="mt-2 text-lg text-slate-300">
-									No. RM: <span class="font-bold text-white">{activePatient.id}</span>
-								</p>
+								<p class="text-sm font-bold text-slate-600">Selesai Diperiksa</p>
 							</div>
-
-							<div
-								class="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-md md:w-1/3"
-							>
-								<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">
-									Keluhan Utama
-								</p>
-								<p class="mt-1 text-lg font-semibold text-white">{activePatient.complaint}</p>
-								<button
-									class="mt-4 w-full rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-900 transition hover:bg-slate-200"
-									>Buka Riwayat Medis</button
-								>
-							</div>
+							<p class="mt-3 text-3xl font-black text-slate-700">{todayStats.finished}</p>
 						</div>
 					</section>
+
+					<!-- 2. HIGHLIGHT PASIEN AKTIF & DETAIL SPESIFIKASI KELUHAN -->
+					{#if activePatient}
+						<section class="mb-6 overflow-hidden rounded-[24px] border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-xl lg:p-8">
+							<div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+								<div class="space-y-4 lg:w-2/3">
+									<div class="flex items-center gap-3">
+										<span class="relative flex h-3 w-3">
+											<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+											<span class="relative inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
+										</span>
+										<p class="text-xs font-extrabold tracking-widest text-emerald-400 uppercase">
+											Pasien Aktif Diperiksa (Antrean #{activePatient.queueNumber})
+										</p>
+									</div>
+
+									<div>
+										<h2 class="text-3xl font-black tracking-tight sm:text-4xl">
+											{activePatient.patientName}
+											<span class="text-lg font-normal text-slate-300">({activePatient.gender}, {activePatient.age} tahun)</span>
+										</h2>
+										<p class="mt-1 text-sm font-medium text-slate-300">
+											No. Rekam Medis: <span class="font-bold text-sky-300">{activePatient.patientId}</span> &bull; Telepon: {activePatient.phone} &bull; Jam: {activePatient.timeSlot}
+										</p>
+									</div>
+
+									<div class="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-inner backdrop-blur-md">
+										<p class="text-[11px] font-bold tracking-wider text-amber-300 uppercase">
+											🩺 Keluhan Utama Hari Ini
+										</p>
+										<p class="mt-1 text-lg font-bold text-white">{activePatient.complaint}</p>
+
+										<div class="mt-3 border-t border-white/10 pt-3">
+											<p class="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+												Rincian Gejala & Catatan Pasien
+											</p>
+											<p class="mt-1 text-xs leading-relaxed text-slate-200">
+												{activePatient.detailedSymptoms}
+											</p>
+										</div>
+
+										{#if activePatient.vitalSigns}
+											<div class="mt-3 flex flex-wrap gap-2 pt-1 text-xs font-semibold text-emerald-300">
+												<span class="rounded-md bg-emerald-500/20 px-2 py-1">📊 {activePatient.vitalSigns}</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<!-- AKSI CEPAT PASIEN AKTIF -->
+								<div class="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-5 lg:w-1/3">
+									<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">Aksi Pemeriksaan</p>
+									<button
+										onclick={() => handleFinishPatient(activePatient.id)}
+										class="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 py-3 text-sm font-bold text-white shadow-lg transition hover:brightness-110"
+									>
+										✓ Tandai Selesai Diperiksa
+									</button>
+									<button
+										onclick={() => openPatientRecordModal(activePatient.patientId)}
+										class="w-full rounded-xl border border-slate-700 bg-slate-800 py-2.5 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
+									>
+										📁 Buka Rekam Medis Pasien Ini
+									</button>
+								</div>
+							</div>
+						</section>
+					{/if}
 
 					<div class="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-						<!-- KIRI: FORM RESEP (Fokus Eksekusi) -->
+						<!-- KIRI: FORM RESEP & TINDAKAN -->
 						<section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
 							<div class="mb-5 flex items-center justify-between border-b border-slate-100 pb-4">
 								<div>
-									<h2 class="text-xl font-bold text-slate-900">Resep & Tindakan</h2>
-									<p class="text-sm text-slate-500">Resepkan obat untuk {activePatient.name}</p>
+									<h2 class="text-xl font-bold text-slate-900">Resep & Tindakan Medis</h2>
+									<p class="text-xs text-slate-500">Inputkan diagnosis & resep obat untuk pasien {activePatient ? activePatient.patientName : ''}</p>
 								</div>
 							</div>
 
 							<form
 								onsubmit={(e) => {
 									e.preventDefault();
-									receiptVisible = true;
+									if (activePatient) handleFinishPatient(activePatient.id);
 								}}
 								class="space-y-5"
 							>
 								<label class="block">
-									<span class="mb-2 block text-sm font-bold text-slate-700">Hasil Diagnosa</span>
+									<span class="mb-2 block text-sm font-bold text-slate-700">Hasil Diagnosis Dokter</span>
 									<input
 										bind:value={diagnosis}
 										class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-medium transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
+										placeholder="Tuliskan hasil diagnosa..."
 									/>
 								</label>
 
 								<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
 									<label class="block">
-										<span class="mb-2 block text-sm font-bold text-slate-700"
-											>Cari Obat (Katalog Apotek)</span
-										>
+										<span class="mb-2 block text-sm font-bold text-slate-700">Cari Obat (Katalog Apotek RS)</span>
 										<input
 											bind:value={searchQuery}
 											class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-											placeholder="Ketik nama obat, keluhan, atau kategori..."
+											placeholder="Ketik nama obat atau kategori..."
 										/>
 									</label>
 
-									<div class="mt-4 max-h-[300px] space-y-2 overflow-y-auto pr-2">
-										{#each filteredMedicines as medicine (medicine.category)}
-											<div
-												class={`flex flex-col justify-between rounded-xl border p-3 sm:flex-row sm:items-center ${selectedMedicines.some((m) => m.name === medicine.name) ? 'border-sky-400 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-											>
+									<div class="mt-4 max-h-[260px] space-y-2 overflow-y-auto pr-2">
+										{#each filteredMedicines as medicine (medicine.name)}
+											<div class={`flex flex-col justify-between rounded-xl border p-3 sm:flex-row sm:items-center ${selectedMedicines.some((m) => m.name === medicine.name) ? 'border-sky-400 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
 												<div>
-													<div class="flex items-center gap-2">
-														<p class="font-bold text-slate-900">{medicine.name}</p>
-														{#if medicine.availability === 'Kritis'}
-															<span
-																class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 uppercase"
-																>Stok Tipis</span
-															>
-														{/if}
-													</div>
+													<p class="font-bold text-slate-900">{medicine.name}</p>
 													<p class="text-xs font-medium text-slate-500">
-														{medicine.category} • Alternatif: {medicine.alternative}
+														{medicine.category} &bull; {medicine.notes}
 													</p>
 												</div>
 												<button
@@ -517,20 +606,16 @@
 													class={`mt-2 shrink-0 rounded-lg border px-4 py-1.5 text-xs font-bold sm:mt-0 ${selectedMedicines.some((m) => m.name === medicine.name) ? 'border-red-200 bg-white text-red-600 hover:bg-red-50' : 'border-slate-300 bg-slate-900 text-white hover:bg-slate-700'}`}
 													onclick={() => toggleMedicine(medicine.name)}
 												>
-													{selectedMedicines.some((m) => m.name === medicine.name)
-														? 'Batalkan'
-														: '+ Resepkan'}
+													{selectedMedicines.some((m) => m.name === medicine.name) ? 'Batalkan' : '+ Resepkan'}
 												</button>
 											</div>
 											{#if selectedMedicines.some((m) => m.name === medicine.name)}
 												<div class="mt-1 ml-4 border-l-2 border-sky-200 pl-3">
 													<input
 														class="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-500"
-														placeholder="Aturan Pakai (misal: 3x1 setelah makan)"
-														value={selectedMedicines.find((m) => m.name === medicine.name)?.usage ??
-															''}
-														oninput={(e) =>
-															updateMedicineUsage(medicine.name, e.currentTarget.value)}
+														placeholder="Aturan Pakai (misal: 3x1 tablet setelah makan)"
+														value={selectedMedicines.find((m) => m.name === medicine.name)?.usage ?? ''}
+														oninput={(e) => updateMedicineUsage(medicine.name, e.currentTarget.value)}
 													/>
 												</div>
 											{/if}
@@ -542,94 +627,102 @@
 									type="submit"
 									class="w-full rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 py-3.5 text-sm font-bold text-white shadow-lg transition hover:opacity-90"
 								>
-									Selesai Pemeriksaan & Buat Resep
+									Selesai Pemeriksaan & Cetak Resep Digital
 								</button>
 							</form>
 						</section>
 
-						<!-- KANAN: ANTREAN & STRUK -->
+						<!-- KANAN: DAFTAR ANTREAN PASIEN HARI INI & DETAIL KELUHAN -->
 						<aside class="space-y-6">
-							<!-- Widget Antrean Selanjutnya -->
 							<div class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-								<h3 class="mb-4 text-lg font-bold text-slate-900">Antrean Berikutnya</h3>
-								<div class="space-y-3">
-									{#each patientQueue.slice(1) as patient (patient.id)}
-										<div
-											class={`flex items-center justify-between rounded-xl border-l-4 bg-slate-50 p-3 shadow-sm ${patient.isUrgent ? 'border-l-rose-500' : 'border-l-amber-400'}`}
-										>
-											<div>
-												<div class="flex items-center gap-2">
-													<p class="font-bold text-slate-900">{patient.name}</p>
-													{#if patient.isUrgent}
-														<span
-															class="rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-600 uppercase"
-															>Prioritas</span
-														>
-													{/if}
+								<div class="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+									<h3 class="text-lg font-bold text-slate-900">Daftar Antrean Pasien Hari Ini</h3>
+									<span class="rounded-lg bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-700">{todayPatients.length} Pasien</span>
+								</div>
+
+								<div class="max-h-[500px] space-y-3 overflow-y-auto pr-1">
+									{#each todayPatients as patient (patient.id)}
+										<div class={`rounded-2xl border p-4 transition-all ${patient.status === 'Sedang Diperiksa' ? 'border-emerald-400 bg-emerald-50/40 shadow-sm' : patient.status === 'Selesai' ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+											<div class="flex items-start justify-between">
+												<div class="flex items-center gap-3">
+													<div class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-black text-sm ${patient.status === 'Sedang Diperiksa' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-700'}`}>
+														#{patient.queueNumber}
+													</div>
+													<div>
+														<div class="flex items-center gap-2">
+															<p class="font-bold text-slate-900">{patient.patientName}</p>
+															{#if patient.isUrgent}
+																<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-600 uppercase">Prioritas</span>
+															{/if}
+														</div>
+														<p class="text-xs font-semibold text-slate-500">
+															No. RM: {patient.patientId} &bull; {patient.timeSlot}
+														</p>
+													</div>
 												</div>
-												<p class="text-xs font-medium text-slate-500">
-													{patient.time} • {patient.complaint}
-												</p>
+
+												<span class={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase ${
+													patient.status === 'Sedang Diperiksa' ? 'bg-emerald-100 text-emerald-700 animate-pulse' :
+													patient.status === 'Menunggu' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700'
+												}`}>
+													{patient.status}
+												</span>
 											</div>
-											<button
-												class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-100"
-												>Panggil</button
-											>
+
+											<div class="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-xs">
+												<p class="font-bold text-slate-800">📋 Keluhan: <span class="font-normal text-slate-600">{patient.complaint}</span></p>
+												<p class="mt-1 text-[11px] text-slate-500 line-clamp-2">{patient.detailedSymptoms}</p>
+											</div>
+
+											{#if patient.status === 'Menunggu'}
+												<div class="mt-3 flex justify-end">
+													<button
+														onclick={() => handleCallPatient(patient.id)}
+														class="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-sky-700 transition"
+													>
+														Panggil ke Ruang Periksa
+													</button>
+												</div>
+											{/if}
+										</div>
+									{:else}
+										<div class="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
+											Belum ada antrean pasien untuk hari ini.
 										</div>
 									{/each}
 								</div>
 							</div>
 
-							<!-- Struk Digital (Tetap dipertahankan dengan UI gelap yang keren) -->
+							<!-- STRUK DIGITAL PREVIEW -->
 							<div class="rounded-[24px] bg-slate-900 p-5 text-white shadow-lg sm:p-6">
 								<div class="mb-4 flex items-center justify-between border-b border-slate-700 pb-4">
 									<div>
-										<h3 class="text-lg font-bold">Struk Digital</h3>
-										<p class="text-xs text-slate-400">Pratinjau resep pasien</p>
+										<h3 class="text-lg font-bold">Struk Digital Resep</h3>
+										<p class="text-xs text-slate-400">Pratinjau resep pasien aktif</p>
 									</div>
 									{#if receiptVisible}
-										<button
-											type="button"
-											class="rounded-xl bg-sky-500 px-4 py-2 text-xs font-bold hover:bg-sky-400"
-											onclick={printReceipt}>Print PDF</button
-										>
+										<button type="button" class="rounded-xl bg-sky-500 px-4 py-2 text-xs font-bold hover:bg-sky-400" onclick={printReceipt}>Print PDF</button>
 									{/if}
 								</div>
 
-								{#if receiptVisible}
-									<div
-										class="receipt-print-shell mt-2 rounded-2xl bg-white p-4 text-slate-900 shadow-inner"
-									>
-										<div
-											class="receipt-print-card mx-auto w-full max-w-[280px] rounded-[16px] border border-slate-200 bg-[#fffdf8] p-3"
-										>
+								{#if receiptVisible && activePatient}
+									<div class="receipt-print-shell mt-2 rounded-2xl bg-white p-4 text-slate-900 shadow-inner">
+										<div class="receipt-print-card mx-auto w-full max-w-[280px] rounded-[16px] border border-slate-200 bg-[#fffdf8] p-3">
 											<div class="text-center">
-												<p class="text-[11px] font-black tracking-[0.35em] uppercase">
-													RS Medika Sehat
-												</p>
-												<p class="mt-1 text-[9px] tracking-[0.3em] text-slate-500 uppercase">
-													Resep Dokter
-												</p>
+												<p class="text-[11px] font-black tracking-[0.35em] uppercase">RS Medika Sehat</p>
+												<p class="mt-1 text-[9px] tracking-[0.3em] text-slate-500 uppercase">Resep Dokter Digital</p>
 											</div>
 											<hr class="receipt-print-divider" />
 											<div class="text-[10px] text-slate-600">
-												<p>
-													<span class="font-bold text-slate-900">Pasien:</span>
-													{activePatient.name}
-												</p>
+												<p><span class="font-bold text-slate-900">Pasien:</span> {activePatient.patientName} ({activePatient.patientId})</p>
 												<p><span class="font-bold text-slate-900">Diagnosa:</span> {diagnosis}</p>
-
 												<div class="mt-3">
-													<p class="font-bold tracking-[0.2em] text-slate-900 uppercase">
-														Daftar Obat
-													</p>
+													<p class="font-bold tracking-[0.2em] text-slate-900 uppercase">Daftar Obat</p>
 													<ul class="mt-2 space-y-2">
 														{#each selectedMedicines as item (item.name)}
 															<li class="receipt-print-line-item">
 																<p class="font-bold text-slate-900">{item.name}</p>
-																<p class="text-[9px] text-slate-500">
-																	{item.usage || 'Aturan tidak tertulis'}
-																</p>
+																<p class="text-[9px] text-slate-500">{item.usage || 'Aturan tidak tertulis'}</p>
 															</li>
 														{/each}
 													</ul>
@@ -638,270 +731,427 @@
 										</div>
 									</div>
 								{:else}
-									<div
-										class="rounded-xl border-2 border-dashed border-slate-700 p-8 text-center text-sm text-slate-400"
-									>
-										Selesaikan pemeriksaan untuk melihat struk resep.
+									<div class="rounded-xl border-2 border-dashed border-slate-700 p-8 text-center text-xs text-slate-400">
+										Selesaikan pemeriksaan untuk mencetak struk resep digital.
 									</div>
 								{/if}
 							</div>
 						</aside>
 					</div>
-					<!-- ===================== -->
-					<!-- MENU 2: JADWAL PRAKTIK & JANJI TEMU -->
-					<!-- ===================== -->
-				{:else if activeMenu == 'jadwal'}
-					<div class="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-						<!-- KIRI: DAFTAR JANJI TEMU PASIEN -->
-						<section class="flex flex-col gap-5">
-							<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-								<div
-									class="mb-5 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between"
-								>
-									<div>
-										<h2 class="text-xl font-bold text-slate-900">Daftar Janji Temu</h2>
-										<p class="text-sm text-slate-500">
-											Jadwal konsultasi pasien yang telah terkonfirmasi
-										</p>
-									</div>
-									<!-- Filter/Tab Ringkas -->
-									<div class="flex gap-2 rounded-xl bg-slate-100 p-1">
-										<button
-											class="rounded-lg bg-white px-4 py-1.5 text-sm font-bold text-slate-900 shadow-sm"
-											>Hari Ini</button
-										>
-										<button
-											class="rounded-lg px-4 py-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
-											>Semua</button
-										>
-									</div>
-								</div>
 
-								<div class="space-y-4">
-									{#each doctorAppointments as appt (appt.id)}
-										<div
-											class={`flex flex-col gap-4 rounded-2xl border p-5 transition-all sm:flex-row sm:items-center sm:justify-between ${appt.status === 'Menunggu' ? 'border-sky-200 bg-sky-50/30 hover:border-sky-300' : appt.status === 'Dibatalkan' ? 'border-slate-200 bg-slate-50 opacity-60' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-										>
-											<!-- Info Pasien -->
-											<div class="flex gap-4">
-												<div
-													class={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-bold ${appt.status === 'Menunggu' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'}`}
-												>
-													{appt.patientName.charAt(0)}
-												</div>
-												<div>
-													<h3 class="font-bold text-slate-900">{appt.patientName}</h3>
-													<p class="text-xs font-medium text-slate-500">{appt.type}</p>
-													<div
-														class="mt-2 flex items-center gap-3 text-xs font-bold text-slate-600"
-													>
-														<span class="flex items-center gap-1">📅 {appt.date}</span>
-														<span class="flex items-center gap-1">⏰ {appt.time}</span>
-													</div>
-												</div>
-											</div>
-
-											<!-- Aksi & Status -->
-											<div class="flex flex-col items-start gap-2 sm:items-end">
-												<span
-													class={`rounded-lg px-3 py-1 text-[10px] font-black tracking-wider uppercase ${
-														appt.status === 'Menunggu'
-															? 'bg-amber-100 text-amber-700'
-															: appt.status === 'Terjadwal'
-																? 'bg-emerald-100 text-emerald-700'
-																: 'bg-rose-100 text-rose-700'
-													}`}
-												>
-													{appt.status}
-												</span>
-
-												{#if appt.status !== 'Dibatalkan'}
-													<div class="mt-2 flex gap-2">
-														{#if appt.date === 'Hari Ini'}
-															<button
-																onclick={() => (activeMenu = 'beranda')}
-																class="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-sky-700"
-																>Mulai Periksa</button
-															>
-														{/if}
-														<button
-															onclick={() => cancelAppointment(appt.id)}
-															class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm hover:bg-slate-50 hover:text-rose-600"
-															>Batalkan</button
-														>
-													</div>
-												{/if}
-											</div>
-										</div>
-									{/each}
-								</div>
-							</div>
-						</section>
-
-						<!-- KANAN: FORM ATUR JADWAL (CRUD Create/Update) -->
-						<aside class="space-y-6">
-							<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-								<div class="mb-5 border-b border-slate-100 pb-4">
-									<h3 class="text-lg font-bold text-slate-900">Atur Jam Praktik</h3>
-									<p class="text-xs text-slate-500">Buka slot antrean untuk pasien</p>
-								</div>
-
-								<form onsubmit={handleSaveSchedule} class="space-y-4">
-									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700"
-											>Tanggal Praktik</span
-										>
-										<input
-											type="date"
-											bind:value={scheduleForm.date}
-											required
-											class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-										/>
-									</label>
-
-									<div class="grid grid-cols-2 gap-4">
-										<label class="block">
-											<span class="mb-1.5 block text-sm font-bold text-slate-700">Jam Mulai</span>
-											<input
-												type="time"
-												bind:value={scheduleForm.startTime}
-												required
-												class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-											/>
-										</label>
-										<label class="block">
-											<span class="mb-1.5 block text-sm font-bold text-slate-700">Jam Selesai</span>
-											<input
-												type="time"
-												bind:value={scheduleForm.endTime}
-												required
-												class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-											/>
-										</label>
-									</div>
-
-									<label class="block">
-										<span class="mb-1.5 block text-sm font-bold text-slate-700"
-											>Maksimal Pasien (Kuota)</span
-										>
-										<input
-											type="number"
-											min="1"
-											max="100"
-											bind:value={scheduleForm.quota}
-											required
-											class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-										/>
-									</label>
-
-									<button
-										type="submit"
-										class="mt-2 w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white shadow-md transition hover:bg-slate-800"
-									>
-										Simpan Jadwal
-									</button>
-								</form>
-							</div>
-
-							<!-- Info Cepat -->
-							<div class="rounded-[24px] bg-sky-900 p-6 text-white shadow-lg">
-								<h3 class="font-bold text-sky-100">Informasi Sistem</h3>
-								<p class="mt-2 text-sm leading-relaxed text-sky-200">
-									Pasien hanya dapat membuat janji temu pada slot jam praktik yang telah Anda buka
-									di atas. Jika Anda membatalkan janji, sistem akan otomatis mengirimkan notifikasi
-									ke aplikasi pasien.
+				<!-- ============================================== -->
+				<!-- MENU 2: JADWAL PRAKTEK & SLOTS TERPERINCI      -->
+				<!-- ============================================== -->
+				{:else if activeMenu === 'jadwal'}
+					<div class="space-y-6">
+						<!-- HEADER & TAB FILTER -->
+						<div class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<h2 class="text-2xl font-black text-slate-900">Spesifikasi Jadwal Praktik Dokter</h2>
+								<p class="text-sm text-slate-500">
+									Kelola slot jam praktik 1 minggu ke depan dan pantau pasien yang mendaftar.
 								</p>
 							</div>
-						</aside>
+
+							<div class="flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
+								<button
+									onclick={() => (scheduleTabFilter = 'semua')}
+									class={`rounded-xl px-4 py-2 text-xs font-bold transition ${scheduleTabFilter === 'semua' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+								>
+									Semua ({doctorPracticeStore.sessionCards.length})
+								</button>
+								<button
+									onclick={() => (scheduleTabFilter = 'hari_ini')}
+									class={`rounded-xl px-4 py-2 text-xs font-bold transition ${scheduleTabFilter === 'hari_ini' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+								>
+									Hari Ini ({doctorPracticeStore.sessionCards.filter((c: PracticeSessionCard) => c.date === todayDateStr).length})
+								</button>
+								<button
+									onclick={() => (scheduleTabFilter = 'akan_datang')}
+									class={`rounded-xl px-4 py-2 text-xs font-bold transition ${scheduleTabFilter === 'akan_datang' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+								>
+									Akan Datang ({doctorPracticeStore.sessionCards.filter((c: PracticeSessionCard) => getSessionCardStatus(c) === 'Akan Datang').length})
+								</button>
+								<button
+									onclick={() => (scheduleTabFilter = 'selesai')}
+									class={`rounded-xl px-4 py-2 text-xs font-bold transition ${scheduleTabFilter === 'selesai' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+								>
+									Selesai ({doctorPracticeStore.sessionCards.filter((c: PracticeSessionCard) => getSessionCardStatus(c) === 'Selesai').length})
+								</button>
+							</div>
+						</div>
+
+						<div class="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
+							<!-- KIRI: KARTU LIST JADWAL PRAKTEK SPESIFIK DENGAN STATUS PER SESI -->
+							<section class="space-y-4">
+								{#each filteredSessionCards as card (card.id)}
+									{@const cardStatus = getSessionCardStatus(card)}
+									<div class={`group relative overflow-hidden rounded-[24px] border p-6 transition-all ${
+										cardStatus === 'Dimulai' ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/50 via-white to-white shadow-md' :
+										cardStatus === 'Akan Datang' ? 'border-sky-200 bg-white hover:border-sky-300 shadow-sm' :
+										'border-slate-200 bg-slate-50/80 opacity-75'
+									}`}>
+										<div class="flex flex-col gap-4">
+											<!-- ATAS: BADGE STATUS, JUDUL SESI, JAM PRAKTIK & PROGRESS BAR -->
+											<div>
+												<div class="flex flex-wrap items-center gap-2.5">
+													<span class={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black tracking-wider uppercase ${
+														cardStatus === 'Dimulai' ? 'bg-emerald-100 text-emerald-700 shadow-sm' :
+														cardStatus === 'Akan Datang' ? 'bg-sky-100 text-sky-700' : 'bg-slate-200 text-slate-600'
+													}`}>
+														{#if cardStatus === 'Dimulai'}
+															<span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+															🟢 Dimulai (Sedang Berlangsung)
+														{:else if cardStatus === 'Akan Datang'}
+															<span class="h-2 w-2 rounded-full bg-sky-500"></span>
+															🔵 Akan Datang
+														{:else}
+															<span class="h-2 w-2 rounded-full bg-slate-400"></span>
+															⚪ Selesai
+														{/if}
+													</span>
+
+													<!-- BADGE STATUS SLOT OPEN/CLOSED & QUOTA FULL -->
+													{#if card.isFull || card.status_slot === 'CLOSED'}
+														<span class="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-black text-rose-700 uppercase tracking-wider">
+															🔴 CLOSED {card.isFull ? '(QUOTA PENUH)' : '(DITUTUP)'}
+														</span>
+													{:else}
+														<span class="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black text-emerald-700 uppercase tracking-wider">
+															🟢 OPEN (TERBUKA)
+														</span>
+													{/if}
+
+													<!-- BADGE STATUS AKTIF -->
+													<span class={`rounded-full px-3 py-1 text-[11px] font-bold ${card.is_active ? 'bg-slate-100 text-slate-700' : 'bg-amber-100 text-amber-800'}`}>
+														{card.is_active ? 'Status: Aktif' : 'Status: Nonaktif'}
+													</span>
+
+													<span class="text-xs font-bold text-slate-500">📅 {card.dateDisplay}</span>
+												</div>
+
+												<h3 class="mt-3 text-xl font-black text-slate-900">{card.sessionName}</h3>
+												<p class="mt-1 text-sm font-semibold text-slate-600">
+													⏰ Jam Praktik: <strong class="text-slate-900">{card.startTime} - {card.endTime} WIB</strong> &bull; Ruang: {card.room}
+												</p>
+
+												<!-- PROGRESS BAR PASIEN TERISI / KUOTA -->
+												<div class="mt-3 w-full sm:w-80">
+													<div class="flex items-center justify-between text-xs font-bold text-slate-600">
+														<span>Terisi: {card.current_patient_count} / {card.quota} Pasien {card.isFull ? '(FULL)' : ''}</span>
+														<span>{Math.round((card.current_patient_count / card.quota) * 100)}%</span>
+													</div>
+													<div class="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+														<div
+															class={`h-full rounded-full transition-all duration-500 ${card.isFull ? 'bg-rose-500' : 'bg-sky-600'}`}
+															style={`width: ${Math.min(100, (card.current_patient_count / card.quota) * 100)}%`}
+														></div>
+													</div>
+												</div>
+											</div>
+
+											<!-- BAWAH: FOOTER DENGAN KONTROL SESI & TOMBOL LIHAT PASIEN -->
+											<div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3.5">
+												<div class="flex flex-wrap items-center gap-2">
+													<span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Kontrol Sesi:</span>
+													<button
+														type="button"
+														disabled={slotActionLoadingMap[`status_${card.slotId}`]}
+														onclick={() => handleUpdateSlotStatus(card.slotId, card.status_slot)}
+														class={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black uppercase transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+															card.status_slot === 'OPEN'
+																? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+																: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+														}`}
+													>
+														{#if slotActionLoadingMap[`status_${card.slotId}`]}
+															<svg class="h-3.5 w-3.5 animate-spin text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+																<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+																<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+															</svg>
+															<span>Memproses...</span>
+														{:else}
+															<span>{card.status_slot === 'OPEN' ? 'Tutup Sesi (Set CLOSED)' : 'Buka Sesi (Set OPEN)'}</span>
+														{/if}
+													</button>
+
+													<button
+														type="button"
+														disabled={slotActionLoadingMap[`active_${card.slotId}`]}
+														onclick={() => handleToggleSlotActive(card.slotId, !card.is_active)}
+														class={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+															card.is_active
+																? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+																: 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+														}`}
+													>
+														{#if slotActionLoadingMap[`active_${card.slotId}`]}
+															<svg class="h-3.5 w-3.5 animate-spin text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+																<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+																<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+															</svg>
+															<span>Memproses...</span>
+														{:else}
+															<span>{card.is_active ? 'Nonaktifkan Sesi' : 'Aktifkan Sesi'}</span>
+														{/if}
+													</button>
+												</div>
+
+												<button
+													type="button"
+													onclick={() => openSchedulePatients({
+														id: card.practiceId,
+														date: card.date,
+														dateDisplay: card.dateDisplay,
+														dayName: card.dayName,
+														sessionName: card.sessionName,
+														startTime: card.startTime,
+														endTime: card.endTime,
+														quota: card.quota,
+														room: card.room,
+														patients: card.patients
+													})}
+													class="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4.5 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-sky-700 active:scale-95 shrink-0"
+												>
+													<svg class="h-4 w-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+													</svg>
+													Lihat Pasien Mendaftar ({card.patients.length})
+												</button>
+											</div>
+										</div>
+									</div>
+								{:else}
+									<div class="rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">
+										Belum ada data slot jadwal praktik yang terdaftar pada database.
+									</div>
+								{/each}
+							</section>
+
+							<!-- KANAN: FORM BUAT JADWAL PRAKTEK -->
+							<aside class="space-y-6">
+								<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+									<div class="mb-5 border-b border-slate-100 pb-4">
+										<div class="flex items-center justify-between">
+											<h3 class="text-xl font-bold text-slate-900">Buat Slot Jadwal Praktik</h3>
+											<span class="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700 uppercase">1 Minggu Ke Depan</span>
+										</div>
+										<p class="mt-1 text-xs text-slate-500">
+											Atur jam operasional dan kuota pasien untuk sesi praktik Anda.
+										</p>
+									</div>
+
+									<!-- MODE TOGGLE FORM -->
+									<div class="mb-5 flex rounded-xl bg-slate-100 p-1">
+										<button
+											type="button"
+											onclick={() => (scheduleFormMode = 'batch')}
+											class={`flex-1 rounded-lg py-2 text-xs font-bold transition ${scheduleFormMode === 'batch' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+										>
+											⚡ Multi-Slot Batch (5 Sesi/Hari)
+										</button>
+										<button
+											type="button"
+											onclick={() => (scheduleFormMode = 'single')}
+											class={`flex-1 rounded-lg py-2 text-xs font-bold transition ${scheduleFormMode === 'single' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+										>
+											Single Slot (1 Sesi)
+										</button>
+									</div>
+
+									<form onsubmit={handleSaveSchedule} class="space-y-4">
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold text-slate-700">Tanggal Praktik</span>
+											<input
+												type="date"
+												bind:value={targetScheduleDate}
+												required
+												class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-semibold outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
+											/>
+										</label>
+
+										{#if scheduleFormMode === 'batch'}
+											<div class="flex items-center justify-between">
+												<span class="text-xs font-bold text-slate-700">Daftar Slot Jam Praktik Hari Tersebut</span>
+												<button
+													type="button"
+													onclick={handleGenerate5SlotsPreset}
+													class="text-[11px] font-bold text-sky-600 hover:underline"
+												>
+													⚡ Auto-fill 5 Sesi Standard
+												</button>
+											</div>
+
+											<div class="max-h-[340px] space-y-3 overflow-y-auto pr-1">
+												{#each batchSlots as slot, index (index)}
+													<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+														<div class="flex items-center justify-between">
+															<span class="text-xs font-black text-slate-800">Slot #{index + 1}</span>
+															{#if batchSlots.length > 1}
+																<button type="button" onclick={() => removeBatchSlotRow(index)} class="text-xs text-rose-600 font-bold hover:underline">Hapus</button>
+															{/if}
+														</div>
+
+														<input
+															bind:value={slot.sessionName}
+															placeholder="Nama Sesi (misal: Sesi Pagi 1)"
+															required
+															class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium bg-white"
+														/>
+
+														<div class="grid grid-cols-3 gap-2">
+															<div>
+																<span class="block text-[10px] text-slate-500 font-bold">Mulai</span>
+																<input type="time" bind:value={slot.startTime} required class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white" />
+															</div>
+															<div>
+																<span class="block text-[10px] text-slate-500 font-bold">Selesai</span>
+																<input type="time" bind:value={slot.endTime} required class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white" />
+															</div>
+															<div>
+																<span class="block text-[10px] text-slate-500 font-bold">Kuota</span>
+																<input type="number" min="1" max="100" bind:value={slot.quota} required class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white" />
+															</div>
+														</div>
+													</div>
+												{/each}
+											</div>
+
+											<button
+												type="button"
+												onclick={addBatchSlotRow}
+												class="w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+											>
+												+ Tambah Baris Slot
+											</button>
+										{:else}
+											<!-- Single Slot Form -->
+											<label class="block">
+												<span class="mb-1 block text-xs font-bold text-slate-700">Nama Sesi</span>
+												<input bind:value={batchSlots[0].sessionName} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
+											</label>
+											<div class="grid grid-cols-2 gap-3">
+												<label class="block">
+													<span class="mb-1 block text-xs font-bold text-slate-700">Jam Mulai</span>
+													<input type="time" bind:value={batchSlots[0].startTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
+												</label>
+												<label class="block">
+													<span class="mb-1 block text-xs font-bold text-slate-700">Jam Selesai</span>
+													<input type="time" bind:value={batchSlots[0].endTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
+												</label>
+											</div>
+											<label class="block">
+												<span class="mb-1 block text-xs font-bold text-slate-700">Maksimal Kuota Pasien</span>
+												<input type="number" min="1" max="100" bind:value={batchSlots[0].quota} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
+											</label>
+										{/if}
+
+										<button
+											type="submit"
+											class="w-full rounded-xl bg-slate-900 py-3.5 text-xs font-bold text-white shadow-lg transition hover:bg-sky-700"
+										>
+											{scheduleFormMode === 'batch' ? `Buka ${batchSlots.length} Slot Jadwal Sekaligus` : 'Buka Slot Jadwal Praktik'}
+										</button>
+									</form>
+								</div>
+							</aside>
+						</div>
 					</div>
-					<!-- ============================== -->
-					<!-- MENU 3: DAFTAR PASIEN (DOKTER) -->
-					<!-- ============================== -->
-				{:else if activeMenu == 'pasien'}
+
+				<!-- ============================================== -->
+				<!-- MENU 3: DAFTAR PASIEN & REKAM MEDIS DOKTER     -->
+				<!-- ============================================== -->
+				{:else if activeMenu === 'pasien'}
 					<div class="space-y-6">
-						<!-- Header & Pencarian -->
-						<div
-							class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-8"
-						>
+						<!-- HEADER DATABASE PASIEN DOKTER -->
+						<div class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
 							<div>
-								<h2 class="text-xl font-bold text-slate-900">Database Pasien</h2>
-								<p class="mt-1 text-sm text-slate-500">
-									Cari rekam medis dan riwayat kunjungan pasien Anda di RS Medika Sehat.
+								<div class="flex items-center gap-2">
+									<h2 class="text-2xl font-black text-slate-900">Daftar Pasien dr. {currentUser.name || 'Spesialis'}</h2>
+									<span class="rounded-lg bg-sky-100 px-2.5 py-0.5 text-xs font-black text-sky-700">
+										{doctorPracticeStore.examinedPatients.length} Pasien
+									</span>
+								</div>
+								<p class="mt-1 text-xs text-slate-500">
+									Manajemen data dan riwayat rekam medis pasien yang ditangani.
 								</p>
 							</div>
 
 							<div class="w-full sm:w-72">
 								<input
 									bind:value={patientSearchQuery}
-									class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm transition outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-									placeholder="Cari nama atau No. RM..."
+									oninput={() => doctorPracticeStore.fetchPatientHistory(patientSearchQuery)}
+									class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
+									placeholder="Cari nama, RM, atau diagnosa..."
 								/>
 							</div>
 						</div>
 
-						<!-- Daftar Kartu Pasien -->
-						<div class="grid gap-4 md:grid-cols-2">
-							{#each filteredPatients as patient (patient.id)}
+						<!-- GRID KARTU PASIEN PASIEN DOKTER -->
+						<div class="grid gap-5 md:grid-cols-2">
+							{#each filteredPatientDatabase as p (p.patientId)}
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
-									class="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:border-sky-300"
+									onclick={() => openPatientRecordModal(p.patientId)}
+									class="group relative flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-sky-400 hover:shadow-md cursor-pointer"
 								>
-									<div>
-										<!-- Header Kartu -->
+									<div class="space-y-3">
 										<div class="flex items-center justify-between border-b border-slate-100 pb-3">
-											<span class="rounded-lg bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700"
-												>RM: {patient.id}</span
-											>
-											<span
-												class="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-black tracking-wider text-slate-600 uppercase"
-											>
-												{patient.status}
+											<span class="rounded-xl bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700 border border-sky-100">
+												No. RM: {p.patientId}
+											</span>
+											<span class="rounded-xl bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700 border border-amber-100">
+												📋 {p.totalVisits}x Kunjungan ke Dokter Ini
 											</span>
 										</div>
 
-										<!-- Informasi Identitas & Diagnosa -->
-										<div class="mt-4 space-y-2">
-											<div class="flex items-baseline justify-between">
-												<h3 class="text-lg font-bold text-slate-900">{patient.name}</h3>
-												<span class="text-xs font-semibold text-slate-400"
-													>{patient.gender}, {patient.age} thn</span
-												>
-											</div>
-
-											<div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
-												<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">
-													Diagnosa Terakhir
+										<div class="flex items-start justify-between">
+											<div>
+												<h3 class="text-xl font-black text-slate-900 group-hover:text-sky-600 transition">
+													{p.name}
+												</h3>
+												<p class="mt-0.5 text-xs font-medium text-slate-500">
+													{p.gender}, {p.age} thn &bull; 📞 {p.phone}
 												</p>
-												<p class="mt-1 text-sm font-semibold text-slate-800">{patient.diagnosis}</p>
 											</div>
 
-											<p class="flex items-center gap-2 pt-1 text-xs font-medium text-slate-500">
-												<span>📅</span> Kunjungan Terakhir: {patient.lastVisit} &nbsp;|&nbsp;
-												<span>📞</span>
-												{patient.phone}
+											<div class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 group-hover:bg-sky-600 group-hover:text-white transition">
+												<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+												</svg>
+											</div>
+										</div>
+
+										<p class="text-xs text-slate-400">📍 {p.address}</p>
+
+										<div class="rounded-2xl border border-slate-100 bg-slate-50 p-3.5 space-y-1">
+											<p class="text-[10px] font-extrabold tracking-wider text-slate-400 uppercase">
+												Diagnosa Terakhir ({p.lastVisitDate})
 											</p>
+											<p class="text-xs font-bold text-slate-800">{p.primaryDiagnosis}</p>
 										</div>
 									</div>
 
-									<!-- Tombol Aksi Cepat -->
-									<div
-										class="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4"
-									>
+									<div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+										<span class="text-[11px] font-bold text-slate-400">
+											Kunjungan Terakhir: {p.lastVisitDate}
+										</span>
 										<button
-											onclick={() => (activeMenu = 'beranda')}
-											class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
-											>Buat Resep Baru</button
+											type="button"
+											onclick={(e) => {
+												e.stopPropagation();
+												openPatientRecordModal(p.patientId);
+											}}
+											class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700"
 										>
-										<button
-											class="rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-sky-700"
-											>Lihat Rekam Medis</button
-										>
+											📁 Buka Rekam Medis Pasien
+										</button>
 									</div>
 								</div>
 							{:else}
-								<div
-									class="col-span-full rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400"
-								>
-									Tidak ada pasien yang ditemukan dengan kata kunci tersebut.
+								<div class="col-span-full rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">
+									Belum ada data pasien yang pernah diperiksa oleh Anda pada database server.
 								</div>
 							{/each}
 						</div>
@@ -912,8 +1162,237 @@
 	</main>
 </div>
 
+<!-- ========================================================================= -->
+<!-- MODAL DRAWER 1: DAFTAR PASIEN YANG MENDAFTAR PADA SLOT JADWAL PRAKTEK     -->
+<!-- ========================================================================= -->
+{#if isScheduleModalOpen && selectedScheduleModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+		<div class="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-[28px] bg-white shadow-2xl flex flex-col">
+			<div class="flex items-center justify-between border-b border-slate-100 bg-slate-900 px-6 py-5 text-white">
+				<div>
+					<div class="flex items-center gap-2">
+						<span class="rounded-md bg-sky-500/20 px-2 py-0.5 text-[10px] font-black text-sky-300 uppercase">
+							{selectedScheduleModal.dateDisplay}
+						</span>
+						<span class="text-xs text-slate-300">&bull; {selectedScheduleModal.startTime} - {selectedScheduleModal.endTime} WIB</span>
+					</div>
+					<h3 class="mt-1 text-xl font-black">{selectedScheduleModal.sessionName}</h3>
+					<p class="text-xs text-slate-400">Daftar Pasien Terdaftar: {selectedScheduleModal.patients.length} dari {selectedScheduleModal.quota} Kuota</p>
+				</div>
+
+				<button
+					onclick={closeSchedulePatients}
+					class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+				>
+					✕
+				</button>
+			</div>
+
+			<div class="flex-1 overflow-y-auto p-6 space-y-4">
+				{#each selectedScheduleModal.patients as patient (patient.id)}
+					<div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 space-y-3">
+						<div class="flex items-start justify-between">
+							<div class="flex items-center gap-3">
+								<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 font-black text-white text-sm">
+									#{patient.queueNumber}
+								</div>
+								<div>
+									<h4 class="font-bold text-slate-900 text-base">{patient.patientName}</h4>
+									<p class="text-xs text-slate-500 font-medium">
+										No. RM: <strong class="text-slate-800">{patient.patientId}</strong> &bull; {patient.gender}, {patient.age} thn &bull; {patient.phone}
+									</p>
+								</div>
+							</div>
+
+							<span class={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase ${
+								patient.status === 'Sedang Diperiksa' ? 'bg-emerald-100 text-emerald-700 animate-pulse' :
+								patient.status === 'Menunggu' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700'
+							}`}>
+								{patient.status}
+							</span>
+						</div>
+
+						<div class="rounded-xl border border-slate-200 bg-white p-3.5 text-xs">
+							<p class="font-bold text-amber-800">🩺 Keluhan Utama:</p>
+							<p class="mt-0.5 font-bold text-slate-900">{patient.complaint}</p>
+
+							<p class="mt-2 text-[11px] font-bold text-slate-500 uppercase">Rincian Gejala & Riwayat:</p>
+							<p class="mt-0.5 text-slate-700 leading-relaxed">{patient.detailedSymptoms}</p>
+
+							{#if patient.vitalSigns}
+								<p class="mt-2 text-[11px] font-semibold text-emerald-700">📊 Tanda Vital: {patient.vitalSigns}</p>
+							{/if}
+						</div>
+
+						<div class="flex justify-end gap-2 pt-1">
+							<button
+								onclick={() => {
+									closeSchedulePatients();
+									openPatientRecordModal(patient.patientId);
+								}}
+								class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+							>
+								📁 Riwayat Rekam Medis
+							</button>
+
+							{#if patient.status === 'Menunggu'}
+								<button
+									onclick={() => {
+										handleCallPatient(patient.id);
+										closeSchedulePatients();
+										activeMenu = 'beranda';
+									}}
+									class="rounded-xl bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-sky-700"
+								>
+									Panggil Pasien Ini
+								</button>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<div class="rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400 text-sm">
+						Belum ada pasien yang mendaftar pada slot jadwal praktik ini.
+					</div>
+				{/each}
+			</div>
+
+			<div class="border-t border-slate-100 bg-slate-50 px-6 py-4 flex justify-end">
+				<button
+					onclick={closeSchedulePatients}
+					class="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white hover:bg-slate-800"
+				>
+					Tutup List Pasien
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================================================= -->
+<!-- MODAL DRAWER 2: RIWAYAT REKAM MEDIS LENGKAP PASIEN DENGAN DOKTER INI       -->
+<!-- ========================================================================= -->
+{#if isPatientRecordModalOpen && selectedPatientRecordModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
+		<div class="relative w-full max-w-3xl max-h-[92vh] overflow-hidden rounded-[28px] bg-white shadow-2xl flex flex-col">
+			<div class="flex items-center justify-between border-b border-slate-800 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-5 text-white">
+				<div>
+					<div class="flex items-center gap-2">
+						<span class="rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-black text-emerald-300 uppercase">
+							No. RM: {selectedPatientRecordModal.patientId}
+						</span>
+						<span class="text-xs text-slate-300">&bull; Total {selectedPatientRecordModal.histories.length} Pemeriksaan oleh Dokter Ini</span>
+					</div>
+					<h3 class="mt-1 text-2xl font-black tracking-tight">{selectedPatientRecordModal.name}</h3>
+					<p class="text-xs text-slate-300">
+						{selectedPatientRecordModal.gender}, {selectedPatientRecordModal.age} tahun &bull; 📞 {selectedPatientRecordModal.phone} &bull; 📍 {selectedPatientRecordModal.address}
+					</p>
+				</div>
+
+				<button
+					onclick={closePatientRecordModal}
+					class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
+				>
+					✕
+				</button>
+			</div>
+
+			<div class="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+				<div class="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 text-xs text-sky-900 flex items-center justify-between">
+					<div>
+						<p class="font-bold text-sky-950">📋 Rekam Medis Dokter Spesifik: dr. {currentUser.name || 'Spesialis'}</p>
+						<p class="mt-0.5 text-sky-800">Menampilkan seluruh riwayat pemeriksaan dan catatan diagnosa pasien yang pernah ditangani oleh Anda.</p>
+					</div>
+					<span class="shrink-0 rounded-xl bg-white px-3 py-1.5 font-black text-sky-700 shadow-sm border border-sky-200">
+						{selectedPatientRecordModal.histories.length} Catatan Medis
+					</span>
+				</div>
+
+				<div class="relative space-y-6 pl-4 before:absolute before:left-2 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-300">
+					{#each selectedPatientRecordModal.histories as record, idx (record.id)}
+						<div class="relative pl-6">
+							<span class="absolute left-[-11px] top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white shadow-md">
+								{selectedPatientRecordModal.histories.length - idx}
+							</span>
+
+							<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+								<div class="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+									<div>
+										<div class="flex items-center gap-2">
+											<span class="text-sm font-black text-slate-900">📅 {record.visitDate}</span>
+											<span class="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+												{record.sessionType}
+											</span>
+										</div>
+									</div>
+
+									<span class={`rounded-lg px-3 py-1 text-[10px] font-black uppercase ${
+										record.status === 'Selesai' ? 'bg-emerald-100 text-emerald-700' :
+										record.status === 'Rawat Jalan' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'
+									}`}>
+										{record.status}
+									</span>
+								</div>
+
+								<div class="grid gap-3 sm:grid-cols-2">
+									<div class="rounded-xl border border-amber-100 bg-amber-50/50 p-3 text-xs space-y-1">
+										<p class="font-bold text-amber-900">🩺 Keluhan Utama Pasien:</p>
+										<p class="text-slate-800 leading-relaxed">{record.complaint}</p>
+									</div>
+
+									<div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-xs space-y-1">
+										<p class="font-bold text-indigo-950">🔍 Hasil Diagnosis Dokter:</p>
+										<p class="font-black text-indigo-900">{record.diagnosis}</p>
+									</div>
+								</div>
+
+								{#if record.prescription && record.prescription.length}
+									<div class="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
+										<p class="font-extrabold text-slate-800 uppercase tracking-wider text-[10px] mb-2">
+											💊 Resep Obat Diberikan ({record.prescription.length} Obat)
+										</p>
+										<div class="space-y-1.5">
+											{#each record.prescription as rx (rx.name)}
+												<div class="flex items-center justify-between rounded-lg bg-white p-2 border border-slate-200">
+													<span class="font-bold text-slate-900">{rx.name}</span>
+													<span class="rounded bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+														{rx.usage}
+													</span>
+												</div>
+											{/each}
+										</div>
+									</div>
+								{/if}
+
+								<div class="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs space-y-2">
+									<p class="font-bold text-emerald-800">📊 Tanda Vital: <span class="font-semibold text-slate-800">{record.vitalSigns}</span></p>
+									<p class="font-bold text-slate-700">📝 Catatan & Tindakan Dokter: <span class="font-normal text-slate-600">{record.doctorNotes}</span></p>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<div class="border-t border-slate-200 bg-white px-6 py-4 flex items-center justify-between">
+				<button
+					type="button"
+					onclick={() => window.print()}
+					class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+				>
+					🖨️ Cetak / Print Rekam Medis
+				</button>
+				<button
+					onclick={closePatientRecordModal}
+					class="rounded-xl bg-slate-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-slate-800"
+				>
+					Tutup Rekam Medis
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
-	/* CSS Print Struk Dipertahankan */
 	.receipt-print-card {
 		font-family: 'Courier New', Courier, monospace;
 		font-size: 12px;

@@ -1599,7 +1599,7 @@
 				</div>
 				<div>
 					<h2 class="text-xl font-bold text-slate-900">Tambah User Baru</h2>
-					<p class="text-sm text-slate-500">Buat akun pengguna dengan endpoint POST /users/patient & POST /users/staff</p>
+					<p class="text-sm text-slate-500">Buat akun pengguna baru untuk pasien maupun staf rumah sakit.</p>
 				</div>
 			</div>
 
@@ -1952,7 +1952,7 @@
 						{isEditUserMode ? 'Edit Informasi User' : 'Detail Spesifik Akun User'}
 					</h2>
 					<p class="text-sm text-slate-500">
-						{isEditUserMode ? 'Perbarui data profil & akun user (PATCH /users/:id)' : 'Data diambil dari endpoint GET /users/:id'}
+						{isEditUserMode ? 'Perbarui data profil & informasi akun pengguna' : 'Informasi detail dan profil akun pengguna'}
 					</p>
 				</div>
 			</div>
@@ -1960,7 +1960,7 @@
 			{#if isFetchingUserDetail}
 				<div class="py-12 text-center">
 					<div class="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
-					<p class="mt-3 text-sm font-semibold text-slate-500">Mengambil data spesifik dari endpoint GET /users/:id...</p>
+					<p class="mt-3 text-sm font-semibold text-slate-500">Memuat detail data pengguna...</p>
 				</div>
 			{:else if selectedUserDetail}
 				{#if isEditUserMode}
