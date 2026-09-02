@@ -18,6 +18,12 @@
 		type PatientAppointment
 	} from '$lib/stores/patientAppointment.svelte';
 
+import {
+		patientPrescriptionStore,
+		fetchPrescriptions,
+		type PatientPrescription
+	} from '$lib/stores/patientPrescription.svelte';
+
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
 
@@ -30,12 +36,6 @@
 
 	let activeMenu = $state('beranda');
 	let isSidebarOpen = $state(false);
-
-	// --- STATE DATA MEDIS & OBAT ---
-	let activeMeds = $state([
-		{ id: 1, name: 'Paracetamol 500mg', status: 'Siap Diambil di Apotek', isReady: true },
-		{ id: 2, name: 'Vitamin C 1000mg', status: 'Dikonsumsi (2 HARI LAGI)', isReady: false }
-	]);
 
 	let careUpdates = $state([
 		{
@@ -82,7 +82,8 @@
 				await Promise.all([
 					departmentStore.fetchDepartments({ is_active: 'true' }),
 					fetchAppointments(),
-					fetchSchedules()
+					fetchSchedules(),
+					fetchPrescriptions()
 				]);
 			}
 		} catch (err) {
@@ -226,37 +227,33 @@
 		}
 	}
 
-	// --- STATE MENU RESEP OBAT (PASIEN) ---
-	let activePrescriptions = $state([
-		{
-			id: 'RX-2026-007',
-			doctor: 'dr. Nanda Putri',
-			date: '30 Juli 2026',
-			status: 'Siap Ambil',
-			isReady: true,
-			medicines: [
-				{ name: 'Paracetamol 500mg', rules: '3x1 Sehari (Sesudah makan)' },
-				{ name: 'Amoxicillin 500mg', rules: '2x1 Sehari (Habiskan)' }
-			]
+	function getPrescriptionStatusBadgeClass(status: string): string {
+		switch (status) {
+			case 'CONFIRMED':
+				return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+			case 'COMPLETED':
+				return 'bg-sky-100 text-sky-800 border-sky-300';
+			case 'CANCELLED':
+				return 'bg-rose-100 text-rose-800 border-rose-300';
+			case 'PENDING':
+			default:
+				return 'bg-amber-100 text-amber-800 border-amber-300';
 		}
-	]);
+	}
 
-	let prescriptionHistory = $state([
-		{
-			id: 'RX-2026-002',
-			doctor: 'dr. Arif Wijaya',
-			date: '15 Juni 2026',
-			status: 'Selesai',
-			medicines: [{ name: 'Omeprazole 20mg', rules: '1x1 Sebelum makan' }]
-		},
-		{
-			id: 'RX-2026-001',
-			doctor: 'dr. Nanda Putri',
-			date: '02 Mei 2026',
-			status: 'Selesai',
-			medicines: [{ name: 'Ibuprofen 400mg', rules: '3x1 Jika perlu' }]
+	function getPrescriptionStatusLabel(status: string): string {
+		switch (status) {
+			case 'CONFIRMED':
+				return 'Siap Ambil di Loket Apotek';
+			case 'COMPLETED':
+				return 'Selesai';
+			case 'CANCELLED':
+				return 'Dibatalkan';
+			case 'PENDING':
+			default:
+				return 'Sedang Diracik Apoteker';
 		}
-	]);
+	}
 
 	// --- STATE MENU PENGATURAN (PASIEN) ---
 	let userProfile = $state({
@@ -395,7 +392,7 @@
 						</div>
 					{/if}
 
-					{#if activeMeds.some((m) => m.isReady)}
+					{#if patientPrescriptionStore.activePrescriptions.some((rx) => rx.status === 'CONFIRMED' || rx.is_ready)}
 						<div
 							class="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm"
 						>
@@ -419,6 +416,12 @@
 									</p>
 								</div>
 							</div>
+							<button
+								onclick={() => (activeMenu = 'resep')}
+								class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-700"
+							>
+								Lihat Resep
+							</button>
 						</div>
 					{/if}
 				</div>
@@ -471,20 +474,40 @@
 						<!-- KANAN: STATUS OBAT & REKAM MEDIS -->
 						<aside class="space-y-6">
 							<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-								<h2 class="mb-4 text-lg font-bold text-slate-900">Pengobatan Saat Ini</h2>
+								<div class="mb-4 flex items-center justify-between">
+									<h2 class="text-lg font-bold text-slate-900">Pengobatan Saat Ini</h2>
+									<button onclick={() => (activeMenu = 'resep')} class="text-xs font-bold text-sky-600 hover:underline">
+										Detail &rarr;
+									</button>
+								</div>
 								<div class="space-y-3">
-									{#each activeMeds as med (med.id)}
-										<div
-											class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3"
-										>
-											<p class="text-sm font-bold text-slate-900">{med.name}</p>
-											<span
-												class={`rounded-lg px-2.5 py-1 text-[10px] font-black tracking-wider uppercase ${med.isReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
-											>
-												{med.status}
-											</span>
+									{#if patientPrescriptionStore.isLoading}
+										<div class="flex items-center justify-center py-6">
+											<div class="h-5 w-5 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600"></div>
 										</div>
-									{/each}
+									{:else if patientPrescriptionStore.activePrescriptions.length === 0}
+										<div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-400">
+											Tidak ada pengobatan resep aktif.
+										</div>
+									{:else}
+										{#each patientPrescriptionStore.activePrescriptions as rx (rx.id)}
+											{#each rx.medicines as med (med.id)}
+												<div
+													class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3"
+												>
+													<div>
+														<p class="text-sm font-bold text-slate-900">{med.name}</p>
+														<p class="text-xs text-sky-700">💊 {med.rules_using}</p>
+													</div>
+													<span
+														class={`rounded-lg px-2.5 py-1 text-[10px] font-black tracking-wider uppercase ${rx.status === 'CONFIRMED' || rx.is_ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+													>
+														{getPrescriptionStatusLabel(rx.status)}
+													</span>
+												</div>
+											{/each}
+										{/each}
+									{/if}
 								</div>
 							</div>
 
@@ -966,103 +989,132 @@
 							</p>
 						</div>
 
-						<!-- Bagian 1: Resep Aktif -->
-						<section class="space-y-4">
-							<h3 class="text-lg font-bold text-slate-800">Status Resep Saat Ini</h3>
-
-							{#each activePrescriptions as rx (rx.id)}
-								<div
-									class={`overflow-hidden rounded-[24px] border transition-all ${rx.isReady ? 'border-emerald-300 bg-emerald-50/40 shadow-md' : 'border-sky-200 bg-white shadow-sm'}`}
+						{#if patientPrescriptionStore.isLoading}
+							<div class="flex flex-col items-center justify-center py-12">
+								<div class="h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"></div>
+								<p class="mt-3 text-sm font-medium text-slate-500">Memuat resep obat Anda...</p>
+							</div>
+						{:else if patientPrescriptionStore.error}
+							<div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+								<p class="text-sm font-bold text-rose-600">❌ {patientPrescriptionStore.error}</p>
+								<button
+									onclick={() => fetchPrescriptions()}
+									class="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
 								>
-									<div class="p-6 sm:p-7">
-										<div
-											class="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between"
-										>
-											<div>
-												<div class="mb-1 flex items-center gap-2">
-													<span
-														class={`rounded-full px-3 py-1 text-[10px] font-black tracking-wider uppercase ${rx.isReady ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}
-													>
-														{rx.status}
-													</span>
-													<span class="text-xs font-bold text-slate-400">ID: {rx.id}</span>
+									Coba Lagi
+								</button>
+							</div>
+						{:else}
+							<!-- Bagian 1: Resep Aktif -->
+							<section class="space-y-4">
+								<h3 class="text-lg font-bold text-slate-800">Status Resep Saat Ini</h3>
+
+								{#each patientPrescriptionStore.activePrescriptions as rx (rx.id)}
+									<div
+										class={`overflow-hidden rounded-[24px] border transition-all ${rx.status === 'CONFIRMED' || rx.is_ready ? 'border-emerald-300 bg-emerald-50/40 shadow-md' : 'border-sky-200 bg-white shadow-sm'}`}
+									>
+										<div class="p-6 sm:p-7">
+											<div
+												class="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between"
+											>
+												<div>
+													<div class="mb-1 flex items-center gap-2">
+														<span
+															class={`rounded-full px-3 py-1 text-[10px] font-black tracking-wider uppercase ${getPrescriptionStatusBadgeClass(rx.status)}`}
+														>
+															{getPrescriptionStatusLabel(rx.status)}
+														</span>
+														<span class="text-xs font-bold text-slate-400">TRX: {rx.no_trx}</span>
+													</div>
+													<h4 class="text-lg font-bold text-slate-900">
+														Pemeriksaan oleh {rx.doctor?.name || 'Dokter'} ({rx.doctor?.department_name || 'Poli'})
+													</h4>
+													<p class="text-xs font-medium text-slate-500">Diresepkan pada {formatDate(rx.recipe_date_exec)}</p>
 												</div>
-												<h4 class="text-lg font-bold text-slate-900">
-													Pemeriksaan oleh {rx.doctor}
-												</h4>
-												<p class="text-xs font-medium text-slate-500">Diresepkan pada {rx.date}</p>
+
+												{#if rx.status === 'CONFIRMED' || rx.is_ready}
+													<div
+														class="rounded-2xl bg-emerald-600 px-4 py-2.5 text-center text-xs font-bold text-white shadow-sm"
+													>
+														🎫 Silakan Ambil di Loket Apotek
+													</div>
+												{:else}
+													<div
+														class="rounded-2xl bg-sky-100 px-4 py-2.5 text-center text-xs font-bold text-sky-700"
+													>
+														⏳ Sedang Diracik Apoteker
+													</div>
+												{/if}
 											</div>
 
-											{#if rx.isReady}
-												<div
-													class="rounded-2xl bg-emerald-600 px-4 py-2.5 text-center text-xs font-bold text-white shadow-sm"
-												>
-													🎫 Silakan Ambil di Loket Apotek
-												</div>
-											{:else}
-												<div
-													class="rounded-2xl bg-sky-100 px-4 py-2.5 text-center text-xs font-bold text-sky-700"
-												>
-													⏳ Sedang Diracik Apoteker
+											{#if rx.verify_notes}
+												<div class="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+													<strong>Catatan Apoteker:</strong> {rx.verify_notes}
 												</div>
 											{/if}
-										</div>
 
-										<!-- Daftar Detail Obat -->
-										<div class="mt-4">
-											<p class="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">
-												Daftar Obat & Aturan Pakai
-											</p>
-											<div class="grid gap-3 sm:grid-cols-2">
-												{#each rx.medicines as med (med)}
-													<div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-														<p class="font-bold text-slate-900">{med.name}</p>
-														<p class="mt-1 text-xs font-semibold text-sky-700">💊 {med.rules}</p>
-													</div>
-												{/each}
+											<!-- Daftar Detail Obat -->
+											<div class="mt-4">
+												<p class="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">
+													Daftar Obat & Aturan Pakai
+												</p>
+												<div class="grid gap-3 sm:grid-cols-2">
+													{#each rx.medicines as med (med.id)}
+														<div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+															<p class="font-bold text-slate-900">{med.name} {med.unit ? `(${med.unit})` : ''}</p>
+															<p class="mt-1 text-xs font-semibold text-sky-700">💊 {med.rules_using}</p>
+														</div>
+													{/each}
+												</div>
 											</div>
 										</div>
 									</div>
-								</div>
-							{:else}
-								<div
-									class="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-10 text-center text-slate-400"
-								>
-									Tidak ada resep aktif saat ini.
-								</div>
-							{/each}
-						</section>
-
-						<!-- Bagian 2: Riwayat Pengobatan Terdahulu -->
-						<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-							<h3 class="mb-5 text-lg font-bold text-slate-900">Riwayat Pengobatan Terdahulu</h3>
-
-							<div class="space-y-4">
-								{#each prescriptionHistory as history (history.id)}
+								{:else}
 									<div
-										class="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between"
+										class="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-10 text-center text-slate-400"
 									>
-										<div>
-											<div class="mb-1 flex items-center gap-2">
-												<span
-													class="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700"
-												>
-													{history.status}
-												</span>
-												<span class="text-xs font-semibold text-slate-400">{history.date}</span>
-											</div>
-											<p class="font-bold text-slate-900">{history.doctor}</p>
-											<p class="mt-2 text-xs font-medium text-slate-600">
-												Obat: <span class="font-semibold text-slate-800">
-													{history.medicines.map((m) => m.name).join(', ')}
-												</span>
-											</p>
-										</div>
-										<span class="text-xs font-bold text-slate-400">ID: {history.id}</span>
+										Tidak ada resep aktif saat ini.
 									</div>
 								{/each}
-							</div>
-						</section>
+							</section>
+
+							<!-- Bagian 2: Riwayat Pengobatan Terdahulu -->
+							<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+								<h3 class="mb-5 text-lg font-bold text-slate-900">Riwayat Pengobatan Terdahulu</h3>
+
+								{#if patientPrescriptionStore.historyPrescriptions.length === 0}
+									<div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-400">
+										Belum ada riwayat pengobatan terdahulu.
+									</div>
+								{:else}
+									<div class="space-y-4">
+										{#each patientPrescriptionStore.historyPrescriptions as history (history.id)}
+											<div
+												class="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between"
+											>
+												<div>
+													<div class="mb-1 flex items-center gap-2">
+														<span
+															class={`rounded px-2 py-0.5 text-[10px] font-bold ${getPrescriptionStatusBadgeClass(history.status)}`}
+														>
+															{getPrescriptionStatusLabel(history.status)}
+														</span>
+														<span class="text-xs font-semibold text-slate-400">{formatDate(history.recipe_date_exec)}</span>
+													</div>
+													<p class="font-bold text-slate-900">{history.doctor?.name || 'Dokter'}</p>
+													<p class="mt-2 text-xs font-medium text-slate-600">
+														Obat: <span class="font-semibold text-slate-800">
+															{history.medicines.map((m) => m.name).join(', ') || '-'}
+														</span>
+													</p>
+												</div>
+												<span class="text-xs font-bold text-slate-400">TRX: {history.no_trx}</span>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</section>
+						{/if}
 					</div>
 
 				<!-- ===================== -->
