@@ -247,9 +247,15 @@
 		selectedPatientRecordModal = null;
 	}
 
-	// --- FORM PEMBUATAN JADWAL PRAKTEK MULTI-SLOT (BATCH) ---
+	// --- FORM PEMBUATAN JADWAL PRAKTEK MULTI-SLOT (BATCH) ATAU SINGLE-SLOT ---
 	let scheduleFormMode = $state<'single' | 'batch'>('batch');
 	let targetScheduleDate = $state(todayDateStr);
+	let singleSlot = $state<{ sessionName: string; startTime: string; endTime: string; quota: number }>({
+		sessionName: 'Sesi Utama',
+		startTime: '08:00',
+		endTime: '10:00',
+		quota: 10
+	});
 	let batchSlots = $state<Array<{ sessionName: string; startTime: string; endTime: string; quota: number }>>([
 		{ sessionName: 'Sesi 1 (Pagi Awal)', startTime: '08:00', endTime: '10:00', quota: 10 },
 		{ sessionName: 'Sesi 2 (Pagi Akhir)', startTime: '10:00', endTime: '12:00', quota: 10 },
@@ -284,7 +290,9 @@
 	async function handleSaveSchedule(e: Event) {
 		e.preventDefault();
 
-		const slotsPayload = batchSlots.map((slot) => ({
+		const selectedSlots = scheduleFormMode === 'single' ? [singleSlot] : batchSlots;
+
+		const slotsPayload = selectedSlots.map((slot) => ({
 			name: slot.sessionName,
 			start_hour: slot.startTime,
 			end_hour: slot.endTime,
@@ -1028,21 +1036,21 @@
 											<!-- Single Slot Form -->
 											<label class="block">
 												<span class="mb-1 block text-xs font-bold text-slate-700">Nama Sesi</span>
-												<input bind:value={batchSlots[0].sessionName} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
+												<input bind:value={singleSlot.sessionName} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
 											</label>
 											<div class="grid grid-cols-2 gap-3">
 												<label class="block">
 													<span class="mb-1 block text-xs font-bold text-slate-700">Jam Mulai</span>
-													<input type="time" bind:value={batchSlots[0].startTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
+													<input type="time" bind:value={singleSlot.startTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
 												</label>
 												<label class="block">
 													<span class="mb-1 block text-xs font-bold text-slate-700">Jam Selesai</span>
-													<input type="time" bind:value={batchSlots[0].endTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
+													<input type="time" bind:value={singleSlot.endTime} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm" />
 												</label>
 											</div>
 											<label class="block">
 												<span class="mb-1 block text-xs font-bold text-slate-700">Maksimal Kuota Pasien</span>
-												<input type="number" min="1" max="100" bind:value={batchSlots[0].quota} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
+												<input type="number" min="1" max="100" bind:value={singleSlot.quota} required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm" />
 											</label>
 										{/if}
 

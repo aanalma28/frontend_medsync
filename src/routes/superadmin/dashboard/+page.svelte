@@ -8,6 +8,7 @@
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import { departmentStore } from '$lib/stores/department.svelte';
 	import { userStore, type UserItem, type UpdateUserPayload } from '$lib/stores/user.svelte';
+	import { hospitalStore, type Hospital, type CreateHospitalPayload, type UpdateHospitalPayload } from '$lib/stores/hospital.svelte';
 
 	type DashboardUser = { role: string; name: string; id: string; user_code?: string };
 
@@ -26,8 +27,8 @@
 				currentUser = profile;
 			}
 
-			// Panggil API departemen (/departments) dan API user (/users)
-			await Promise.all([departmentStore.fetchDepartments(), userStore.fetchUsers()]);
+			// Panggil API hospital (/hospitals), departemen (/departments), dan user (/users)
+			await Promise.all([hospitalStore.fetchHospitals(), departmentStore.fetchDepartments(), userStore.fetchUsers()]);
 		} catch (err) {
 			console.error('Gagal verifikasi sesi:', err);
 			isForbidden = true; // Anggap terlarang jika gagal koneksi/token mati
@@ -694,6 +695,212 @@
 			isDeptSubmitting = false;
 		}
 	}
+
+	// =============================================
+	// MANAJEMEN RUMAH SAKIT — State & Validation
+	// =============================================
+	let hospitals = $derived(hospitalStore.list);
+
+	let hospitalSearchQuery = $state('');
+	let hospitalStatusFilter = $state<'all' | 'active' | 'inactive'>('all');
+	let hospitalPage = $state(1);
+	let hospitalLimit = $state(10);
+
+	let filteredHospitals = $derived(
+		hospitals
+			.filter((h) => {
+				const search = hospitalSearchQuery.trim().toLowerCase();
+				const matchesSearch =
+					search === '' ||
+					(h.hospital_code || h.kode_hospital || '').toLowerCase().includes(search) ||
+					(h.name || h.nama_hospital || '').toLowerCase().includes(search) ||
+					(h.address || h.alamat_hospital || '').toLowerCase().includes(search) ||
+					(h.owner?.name || '').toLowerCase().includes(search);
+
+				const isHospActive = h.is_active !== false;
+				const matchesStatus =
+					hospitalStatusFilter === 'all' ||
+					(hospitalStatusFilter === 'active' && isHospActive) ||
+					(hospitalStatusFilter === 'inactive' && !isHospActive);
+
+				return matchesSearch && matchesStatus;
+			})
+			.sort((a, b) => {
+				const aActive = a.is_active !== false ? 1 : 0;
+				const bActive = b.is_active !== false ? 1 : 0;
+				if (aActive !== bActive) return bActive - aActive;
+				return (a.name || '').localeCompare(b.name || '');
+			})
+	);
+
+	let paginatedHospitals = $derived(
+		filteredHospitals.slice((hospitalPage - 1) * hospitalLimit, hospitalPage * hospitalLimit)
+	);
+	let hospitalTotalPages = $derived(Math.ceil(filteredHospitals.length / hospitalLimit) || 1);
+
+	// Modal Form State (Tambah / Edit RS)
+	let showHospitalModal = $state(false);
+	let isEditHospital = $state(false);
+	let editingHospitalId = $state<string | null>(null);
+	let isHospitalSubmitting = $state(false);
+	let hospitalModalError = $state<string | null>(null);
+
+	let hospitalForm = $state({
+		code: '',
+		name: '',
+		address: '',
+		user_id: '',
+		is_active: true
+	});
+
+	// Form Real-time Validation
+	let isHospitalCodeValid = $derived(/^[A-Za-z0-9_-]{2,50}$/.test(hospitalForm.code.trim()));
+	let isHospitalNameValid = $derived(
+		hospitalForm.name.trim().length >= 2 && hospitalForm.name.trim().length <= 150
+	);
+	let isHospitalAddressValid = $derived(
+		hospitalForm.address.trim().length >= 3 && hospitalForm.address.trim().length <= 500
+	);
+	let isHospitalFormValid = $derived(
+		isHospitalCodeValid && isHospitalNameValid && isHospitalAddressValid
+	);
+
+	// Detail Modal State
+	let showHospitalDetailModal = $state(false);
+	let isFetchingHospitalDetail = $state(false);
+	let selectedHospitalDetail = $state<Hospital | null>(null);
+
+	// Cascading Soft Delete Alert Modal State
+	let showHospitalDeleteModal = $state(false);
+	let deletingHospital = $state<Hospital | null>(null);
+	let isHospitalDeleting = $state(false);
+	let hospitalDeleteError = $state<string | null>(null);
+
+	function openAddHospitalModal() {
+		hospitalForm = {
+			code: '',
+			name: '',
+			address: '',
+			user_id: currentUser.id || '',
+			is_active: true
+		};
+		isEditHospital = false;
+		editingHospitalId = null;
+		hospitalModalError = null;
+		showHospitalModal = true;
+	}
+
+	function openEditHospitalModal(hosp: Hospital) {
+		hospitalForm = {
+			code: hosp.hospital_code || hosp.kode_hospital || '',
+			name: hosp.name || hosp.nama_hospital || '',
+			address: hosp.address || hosp.alamat_hospital || '',
+			user_id: hosp.user_id || hosp.owner?.id || currentUser.id || '',
+			is_active: hosp.is_active !== false
+		};
+		isEditHospital = true;
+		editingHospitalId = hosp.id;
+		hospitalModalError = null;
+		showHospitalModal = true;
+	}
+
+	function closeHospitalModal() {
+		showHospitalModal = false;
+		hospitalModalError = null;
+	}
+
+	async function handleSaveHospital(event: Event) {
+		event.preventDefault();
+		if (!isHospitalFormValid || isHospitalSubmitting) return;
+
+		isHospitalSubmitting = true;
+		hospitalModalError = null;
+
+		const cleanCode = hospitalForm.code.trim().toUpperCase();
+		const cleanName = hospitalForm.name.trim();
+		const cleanAddress = hospitalForm.address.trim();
+		const cleanUserId = hospitalForm.user_id || currentUser.id;
+
+		try {
+			if (isEditHospital && editingHospitalId) {
+				await hospitalStore.updateHospital(editingHospitalId, {
+					hospital_code: cleanCode,
+					name: cleanName,
+					address: cleanAddress,
+					user_id: cleanUserId || undefined,
+					is_active: hospitalForm.is_active
+				});
+			} else {
+				await hospitalStore.createHospital({
+					hospital_code: cleanCode,
+					name: cleanName,
+					address: cleanAddress,
+					user_id: cleanUserId || undefined
+				});
+			}
+			closeHospitalModal();
+			await hospitalStore.fetchHospitals();
+		} catch (err: any) {
+			console.error('Gagal menyimpan rumah sakit:', err);
+			hospitalModalError = err?.message || 'Gagal menyimpan rumah sakit';
+		} finally {
+			isHospitalSubmitting = false;
+		}
+	}
+
+	async function openHospitalDetail(id: string) {
+		isFetchingHospitalDetail = true;
+		showHospitalDetailModal = true;
+		selectedHospitalDetail = null;
+
+		try {
+			const detail = await hospitalStore.getHospitalById(id);
+			selectedHospitalDetail = detail;
+		} catch (err) {
+			console.error('Gagal mengambil detail rumah sakit:', err);
+		} finally {
+			isFetchingHospitalDetail = false;
+		}
+	}
+
+	function closeHospitalDetailModal() {
+		showHospitalDetailModal = false;
+		selectedHospitalDetail = null;
+	}
+
+	function openDeleteHospitalModal(hospital: Hospital) {
+		deletingHospital = hospital;
+		hospitalDeleteError = null;
+		showHospitalDeleteModal = true;
+	}
+
+	function closeDeleteHospitalModal() {
+		showHospitalDeleteModal = false;
+		deletingHospital = null;
+		hospitalDeleteError = null;
+	}
+
+	async function confirmDeleteHospital() {
+		if (!deletingHospital || isHospitalDeleting) return;
+
+		isHospitalDeleting = true;
+		hospitalDeleteError = null;
+
+		try {
+			await hospitalStore.deleteHospital(deletingHospital.id);
+			await Promise.all([
+				hospitalStore.fetchHospitals(),
+				departmentStore.fetchDepartments(),
+				userStore.fetchUsers()
+			]);
+			closeDeleteHospitalModal();
+		} catch (err: any) {
+			console.error('Gagal menonaktifkan rumah sakit:', err);
+			hospitalDeleteError = err?.message || 'Gagal menonaktifkan rumah sakit';
+		} finally {
+			isHospitalDeleting = false;
+		}
+	}
 </script>
 
 <Title title="Superadmin | Dashboard" />
@@ -894,6 +1101,258 @@
 							</ul>
 						</section>
 					</div>
+
+					<!-- MANAJEMEN RUMAH SAKIT & KLINIK -->
+				{:else if activeMenu === 'hospitals'}
+					<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+						<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<h2 class="text-xl font-bold text-slate-900">Manajemen Rumah Sakit & Klinik</h2>
+								<p class="text-sm text-slate-500">
+									Kelola daftar rumah sakit, klinik, cabang, serta instansi penyedia layanan kesehatan.
+								</p>
+							</div>
+							<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+								<!-- Dropdown Filter Status RS -->
+								<select
+									bind:value={hospitalStatusFilter}
+									class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+								>
+									<option value="all">Semua Status</option>
+									<option value="active">Aktif Sahaja</option>
+									<option value="inactive">Non-Aktif Sahaja</option>
+								</select>
+								<!-- Search Input -->
+								<div class="relative">
+									<input
+										type="text"
+										bind:value={hospitalSearchQuery}
+										placeholder="Cari kode/nama/alamat..."
+										class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pr-4 pl-9 text-sm outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 sm:w-64"
+									/>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke-width="2"
+										stroke="currentColor"
+										class="absolute top-2.5 left-3 h-4 w-4 text-slate-400"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+										/>
+									</svg>
+								</div>
+								<button
+									onclick={openAddHospitalModal}
+									class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
+								>
+									+ Tambah Rumah Sakit
+								</button>
+							</div>
+						</div>
+
+						<!-- Summary Cards RS -->
+						<div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+							<div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+								<p class="text-xs font-semibold text-slate-500">Total Rumah Sakit / Klinik</p>
+								<p class="mt-1 text-2xl font-black text-slate-900">{hospitals.length}</p>
+							</div>
+							<div class="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+								<p class="text-xs font-semibold text-emerald-700">Rumah Sakit Aktif</p>
+								<p class="mt-1 text-2xl font-black text-emerald-900">
+									{hospitals.filter((h) => h.is_active !== false).length}
+								</p>
+							</div>
+							<div class="rounded-xl border border-slate-200 bg-slate-100 p-4">
+								<p class="text-xs font-semibold text-slate-600">Rumah Sakit Non-Aktif</p>
+								<p class="mt-1 text-2xl font-black text-slate-700">
+									{hospitals.filter((h) => h.is_active === false).length}
+								</p>
+							</div>
+						</div>
+
+						<!-- Mobile Card View RS -->
+						<div class="block space-y-3 md:hidden">
+							{#each paginatedHospitals as hosp}
+								<div
+									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
+								>
+									<div class="flex items-center justify-between border-b border-slate-100 pb-3">
+										<span
+											class="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-extrabold text-indigo-700"
+										>
+											{hosp.hospital_code || hosp.kode_hospital}
+										</span>
+										{#if hosp.is_active !== false}
+											<span
+												class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700"
+											>
+												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Aktif
+											</span>
+										{:else}
+											<span
+												class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600"
+											>
+												<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span> Non-Aktif
+											</span>
+										{/if}
+									</div>
+
+									<div class="mt-3 space-y-1">
+										<h3 class="font-bold text-slate-900">{hosp.name || hosp.nama_hospital}</h3>
+										<p class="text-xs text-slate-500 line-clamp-2">
+											📍 {hosp.address || hosp.alamat_hospital || '-'}
+										</p>
+										<div class="flex items-center gap-4 text-xs text-slate-500 pt-1">
+											<span>👤 Owner: {hosp.owner?.name || 'Superadmin'}</span>
+											<span>🏥 Dept: {hosp.department_count ?? 0}</span>
+										</div>
+									</div>
+
+									<div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+										<button
+											onclick={() => openHospitalDetail(hosp.id)}
+											class="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+										>
+											Detail
+										</button>
+										<button
+											onclick={() => openEditHospitalModal(hosp)}
+											class="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+										>
+											Edit
+										</button>
+										{#if hosp.is_active !== false}
+											<button
+												onclick={() => openDeleteHospitalModal(hosp)}
+												class="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100"
+											>
+												Soft Delete
+											</button>
+										{/if}
+									</div>
+								</div>
+							{:else}
+								<div class="rounded-2xl border border-slate-200 p-8 text-center text-slate-400">
+									Tidak ada rumah sakit/klinik ditemukan.
+								</div>
+							{/each}
+						</div>
+
+						<!-- Desktop Table View RS -->
+						<div class="hidden overflow-x-auto md:block">
+							<table class="w-full text-left text-sm text-slate-600">
+								<thead class="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider">
+									<tr>
+										<th class="rounded-l-xl px-4 py-3">Kode RS</th>
+										<th class="px-4 py-3">Nama Rumah Sakit / Klinik</th>
+										<th class="px-4 py-3">Alamat</th>
+										<th class="px-4 py-3">Pemilik / Owner</th>
+										<th class="px-4 py-3">Jumlah Dept</th>
+										<th class="px-4 py-3">Status</th>
+										<th class="rounded-r-xl px-4 py-3 text-right">Aksi</th>
+									</tr>
+								</thead>
+								<tbody class="divide-y divide-slate-100">
+									{#each paginatedHospitals as hosp}
+										<tr class="transition hover:bg-slate-50/80">
+											<td class="px-4 py-3.5 font-mono text-xs font-bold text-indigo-700">
+												{hosp.hospital_code || hosp.kode_hospital}
+											</td>
+											<td class="px-4 py-3.5 font-bold text-slate-900">
+												{hosp.name || hosp.nama_hospital}
+											</td>
+											<td class="px-4 py-3.5 text-xs text-slate-600 max-w-xs truncate">
+												{hosp.address || hosp.alamat_hospital || '-'}
+											</td>
+											<td class="px-4 py-3.5 text-xs font-medium text-slate-700">
+												{hosp.owner?.name || 'Superadmin'}
+											</td>
+											<td class="px-4 py-3.5 text-xs font-bold text-slate-700">
+												{hosp.department_count ?? 0} Unit
+											</td>
+											<td class="px-4 py-3.5">
+												{#if hosp.is_active !== false}
+													<span
+														class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700"
+													>
+														<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Aktif
+													</span>
+												{:else}
+													<span
+														class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600"
+													>
+														<span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span> Non-Aktif
+													</span>
+												{/if}
+											</td>
+											<td class="px-4 py-3.5 text-right">
+												<div class="inline-flex items-center gap-1.5">
+													<button
+														onclick={() => openHospitalDetail(hosp.id)}
+														class="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+														title="Lihat Detail RS"
+													>
+														Detail
+													</button>
+													<button
+														onclick={() => openEditHospitalModal(hosp)}
+														class="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+														title="Edit RS"
+													>
+														Edit
+													</button>
+													{#if hosp.is_active !== false}
+														<button
+															onclick={() => openDeleteHospitalModal(hosp)}
+															class="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
+															title="Nonaktifkan RS (Soft Delete)"
+														>
+															Soft Delete
+														</button>
+													{/if}
+												</div>
+											</td>
+										</tr>
+									{:else}
+										<tr>
+											<td colspan="7" class="py-8 text-center text-slate-400">
+												Tidak ada data rumah sakit/klinik yang sesuai.
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+
+						<!-- Pagination Footer RS -->
+						{#if hospitalTotalPages > 1}
+							<div class="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+								<p class="text-xs text-slate-500">
+									Halaman <span class="font-bold">{hospitalPage}</span> dari <span class="font-bold">{hospitalTotalPages}</span>
+								</p>
+								<div class="flex items-center gap-2">
+									<button
+										disabled={hospitalPage <= 1}
+										onclick={() => (hospitalPage -= 1)}
+										class="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+									>
+										Sebelumnya
+									</button>
+									<button
+										disabled={hospitalPage >= hospitalTotalPages}
+										onclick={() => (hospitalPage += 1)}
+										class="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+									>
+										Selanjutnya
+									</button>
+								</div>
+							</div>
+						{/if}
+					</section>
 
 					<!-- MANAJEMEN AKUN -->
 				{:else if activeMenu === 'admin-mgmt'}
@@ -2928,6 +3387,308 @@
 					</button>
 				</div>
 			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================= -->
+<!-- MODAL: TAMBAH / EDIT RUMAH SAKIT         -->
+<!-- ========================================= -->
+{#if showHospitalModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeHospitalModal();
+		}}
+	>
+		<div
+			class="w-full max-w-xl overflow-hidden rounded-3xl bg-white shadow-2xl transition-all"
+		>
+			<!-- Header Modal -->
+			<div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+				<div class="flex items-center gap-3">
+					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-lg font-bold text-slate-900">
+							{isEditHospital ? 'Edit Rumah Sakit / Klinik' : 'Tambah Rumah Sakit / Klinik'}
+						</h3>
+						<p class="text-xs text-slate-500">
+							{isEditHospital ? 'Perbarui data identitas dan akses rumah sakit' : 'Daftarkan rumah sakit atau klinik cabang baru'}
+						</p>
+					</div>
+				</div>
+				<button
+					onclick={closeHospitalModal}
+					class="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+				>
+					✕
+				</button>
+			</div>
+
+			<!-- Error Alert -->
+			{#if hospitalModalError}
+				<div class="m-6 mb-0 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
+					⚠️ {hospitalModalError}
+				</div>
+			{/if}
+
+			<!-- Form -->
+			<form onsubmit={handleSaveHospital} class="p-6 space-y-4">
+				<!-- Kode RS -->
+				<div>
+					<label class="mb-1 block text-xs font-bold text-slate-700">Kode Rumah Sakit / Klinik <span class="text-rose-500">*</span></label>
+					<input
+						type="text"
+						bind:value={hospitalForm.code}
+						placeholder="Misal: RS-MDK01"
+						class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm uppercase font-mono font-bold outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+					/>
+					<p class="mt-1 text-[11px] text-slate-400">Minimal 2-50 karakter (Huruf, Angka, Strip, Underscore)</p>
+				</div>
+
+				<!-- Nama RS -->
+				<div>
+					<label class="mb-1 block text-xs font-bold text-slate-700">Nama Rumah Sakit / Klinik <span class="text-rose-500">*</span></label>
+					<input
+						type="text"
+						bind:value={hospitalForm.name}
+						placeholder="Misal: Rumah Sakit Medika Utama"
+						class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+					/>
+					<p class="mt-1 text-[11px] text-slate-400">Minimal 2-150 karakter</p>
+				</div>
+
+				<!-- Alamat RS -->
+				<div>
+					<label class="mb-1 block text-xs font-bold text-slate-700">Alamat Lengkap <span class="text-rose-500">*</span></label>
+					<textarea
+						bind:value={hospitalForm.address}
+						rows="3"
+						placeholder="Jl. Pemuda No. 45, Jakarta Pusat"
+						class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+					></textarea>
+					<p class="mt-1 text-[11px] text-slate-400">Minimal 3-500 karakter</p>
+				</div>
+
+				<!-- Switch Status (Edit mode only) -->
+				{#if isEditHospital}
+					<div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4">
+						<div>
+							<p class="text-sm font-bold text-slate-800">Status Operasional</p>
+							<p class="text-xs text-slate-500">Mengontrol aksesibilitas rumah sakit di sistem</p>
+						</div>
+						<label class="relative inline-flex cursor-pointer items-center">
+							<input type="checkbox" bind:checked={hospitalForm.is_active} class="peer sr-only" />
+							<div class="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-500 peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+						</label>
+					</div>
+				{/if}
+
+				<!-- Action Buttons -->
+				<div class="flex items-center gap-3 pt-4 border-t border-slate-100">
+					<button
+						type="button"
+						onclick={closeHospitalModal}
+						class="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+					>
+						Batal
+					</button>
+					<button
+						type="submit"
+						disabled={!isHospitalFormValid || isHospitalSubmitting}
+						class="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white shadow-md hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						{isHospitalSubmitting ? 'Menyimpan...' : isEditHospital ? 'Simpan Perubahan' : 'Tambah Rumah Sakit'}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================= -->
+<!-- MODAL: DETAIL RUMAH SAKIT                -->
+<!-- ========================================= -->
+{#if showHospitalDetailModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeHospitalDetailModal();
+		}}
+	>
+		<div class="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+			<div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+				<div class="flex items-center gap-3">
+					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-lg font-bold text-slate-900">Detail Rumah Sakit / Klinik</h3>
+						<p class="text-xs text-slate-500">Informasi lengkap instansi dan departemen terdaftar</p>
+					</div>
+				</div>
+				<button
+					onclick={closeHospitalDetailModal}
+					class="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+				>
+					✕
+				</button>
+			</div>
+
+			<div class="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+				{#if isFetchingHospitalDetail}
+					<div class="py-12 text-center text-slate-400">
+						<div class="inline-block h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
+						<p class="mt-2 text-xs font-semibold">Memuat detail rumah sakit...</p>
+					</div>
+				{:else if selectedHospitalDetail}
+					<!-- Info Utama Card -->
+					<div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-5 space-y-3">
+						<div class="flex items-center justify-between">
+							<span class="rounded-lg bg-indigo-100 px-3 py-1 font-mono text-xs font-bold text-indigo-700">
+								{selectedHospitalDetail.hospital_code || selectedHospitalDetail.kode_hospital}
+							</span>
+							{#if selectedHospitalDetail.is_active !== false}
+								<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+									<span class="h-2 w-2 rounded-full bg-emerald-500"></span> Aktif
+								</span>
+							{:else}
+								<span class="inline-flex items-center gap-1.5 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">
+									<span class="h-2 w-2 rounded-full bg-slate-500"></span> Non-Aktif
+								</span>
+							{/if}
+						</div>
+						<h2 class="text-xl font-black text-slate-900">{selectedHospitalDetail.name || selectedHospitalDetail.nama_hospital}</h2>
+						<p class="text-xs text-slate-600">📍 {selectedHospitalDetail.address || selectedHospitalDetail.alamat_hospital || '-'}</p>
+					</div>
+
+					<!-- Grid Attributes -->
+					<div class="grid grid-cols-2 gap-4">
+						<div class="rounded-xl border border-slate-100 p-4">
+							<p class="text-xs font-semibold text-slate-400">Pemilik / Owner</p>
+							<p class="mt-1 text-sm font-bold text-slate-800">{selectedHospitalDetail.owner?.name || 'Superadmin'}</p>
+							<p class="text-[11px] text-slate-500">{selectedHospitalDetail.owner?.email || '-'}</p>
+						</div>
+						<div class="rounded-xl border border-slate-100 p-4">
+							<p class="text-xs font-semibold text-slate-400">Total Departemen</p>
+							<p class="mt-1 text-sm font-bold text-slate-800">{selectedHospitalDetail.department_count ?? 0} Unit</p>
+							<p class="text-[11px] text-slate-500">Terhubung secara struktural</p>
+						</div>
+					</div>
+
+					<!-- Departemen List -->
+					<div>
+						<h4 class="mb-3 text-sm font-bold text-slate-800">Daftar Departemen Terhubung ({selectedHospitalDetail.departments?.length ?? 0})</h4>
+						{#if selectedHospitalDetail.departments && selectedHospitalDetail.departments.length > 0}
+							<div class="divide-y divide-slate-100 rounded-xl border border-slate-100">
+								{#each selectedHospitalDetail.departments as dept}
+									<div class="flex items-center justify-between p-3">
+										<div>
+											<p class="text-xs font-bold text-slate-900">{dept.name}</p>
+											<p class="font-mono text-[11px] text-indigo-600">{dept.departmen_code}</p>
+										</div>
+										<span class="text-[10px] font-bold px-2 py-0.5 rounded-md {dept.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}">
+											{dept.is_active ? 'Aktif' : 'Non-Aktif'}
+										</span>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<div class="rounded-xl border border-slate-100 bg-slate-50 p-4 text-center text-xs text-slate-400">
+								Belum ada departemen yang didaftarkan pada rumah sakit ini.
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4 text-right">
+				<button
+					onclick={closeHospitalDetailModal}
+					class="rounded-xl bg-slate-900 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-slate-800"
+				>
+					Tutup
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================= -->
+<!-- MODAL: ALERT KONFIRMASI SOFT DELETE RS   -->
+<!-- ========================================= -->
+{#if showHospitalDeleteModal && deletingHospital}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeDeleteHospitalModal();
+		}}
+	>
+		<div class="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl animate-in fade-in zoom-in duration-150">
+			<div class="p-6 text-center space-y-4">
+				<!-- Warning Icon Badge -->
+				<div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+					</svg>
+				</div>
+
+				<div>
+					<h3 class="text-lg font-black text-slate-900">Konfirmasi Soft Delete Rumah Sakit</h3>
+					<p class="mt-1 text-sm font-semibold text-rose-600">
+						"{deletingHospital.name || deletingHospital.nama_hospital}"
+					</p>
+				</div>
+
+				<!-- Cascading Warning Card -->
+				<div class="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-left space-y-2 text-xs text-rose-800">
+					<p class="font-bold flex items-center gap-1.5 text-rose-900">
+						<span>🚨</span> PERINGATAN DAMPAK CASCADING:
+					</p>
+					<ul class="list-disc pl-4 space-y-1 text-[11px] leading-relaxed">
+						<li>Rumah Sakit ini akan dinonaktifkan (Soft Delete).</li>
+						<li><strong>Seluruh Departemen</strong> di bawah rumah sakit ini akan ikut **nonaktif**.</li>
+						<li><strong>Seluruh Akun User / Staf</strong> yang terdaftar di departemen-departemen tersebut akan ikut **nonaktif**.</li>
+					</ul>
+				</div>
+
+				{#if hospitalDeleteError}
+					<div class="rounded-xl border border-rose-300 bg-rose-100 p-3 text-xs font-semibold text-rose-800">
+						⚠️ {hospitalDeleteError}
+					</div>
+				{/if}
+
+				<!-- Action Buttons -->
+				<div class="flex items-center gap-3 pt-2">
+					<button
+						type="button"
+						onclick={closeDeleteHospitalModal}
+						class="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+					>
+						Batal
+					</button>
+					<button
+						type="button"
+						disabled={isHospitalDeleting}
+						onclick={confirmDeleteHospital}
+						class="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-md hover:bg-rose-700 disabled:opacity-50"
+					>
+						{isHospitalDeleting ? 'Menonaktifkan...' : 'Ya, Nonaktifkan RS'}
+					</button>
+				</div>
+			</div>
 		</div>
 	</div>
 {/if}
