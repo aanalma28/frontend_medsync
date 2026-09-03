@@ -39,7 +39,7 @@
 		try {
 			const profile = await validateSession();
 
-			if (profile.role.toLowerCase() !== 'doctor') {
+			if (profile.role.toLowerCase() !== 'general_doctor') {
 				isForbidden = true;
 			} else {
 				currentUser = profile;

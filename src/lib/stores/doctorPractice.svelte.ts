@@ -10,7 +10,7 @@ export type RegisteredPatient = {
 	queueNumber: number;
 	timeSlot: string;
 	status: 'Sedang Diperiksa' | 'Menunggu' | 'Selesai' | 'Dibatalkan';
-	complaint: string;
+	complaint?: string;
 	detailedSymptoms: string;
 	vitalSigns?: string;
 	isUrgent?: boolean;
@@ -190,7 +190,7 @@ export async function fetchSchedules(params?: { date_from?: string; date_to?: st
 						queueNumber: apt.queue_number,
 						timeSlot: `${slot.start_hour} WIB`,
 						status: mapAppointmentStatus(apt.status),
-						complaint: 'Pemeriksaan Rutin Poli Dokter',
+						complaint: apt.patient.complaint,
 						detailedSymptoms: 'Terdaftar melalui pendaftaran online MedSync.',
 						vitalSigns: 'TD: 120/80 mmHg | Suhu: 36.8°C'
 					}))
@@ -406,7 +406,7 @@ export const doctorPracticeStore = {
 					const count = slot.current_patient_count || 0;
 					const isFull = count >= slot.max_patient;
 					const effectiveStatus = isFull ? 'CLOSED' : slot.status_slot;
-					
+
 					const slotPatients = sched.patients.filter((p) =>
 						p.timeSlot.includes(slot.start_hour) || p.timeSlot.includes(slot.name)
 					);

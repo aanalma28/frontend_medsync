@@ -164,14 +164,14 @@ export async function fetchAppointments(params?: {
 	}
 }
 
-export async function createAppointment(slotPracticeId: string) {
+export async function createAppointment(slotPracticeId: string, keluhan?: string) {
 	isSubmitting = true;
 	error = null;
 
 	try {
 		const response = await api.post<{ statusCode: number; message: string; data: any }>(
 			'/patient/dashboard/appointments',
-			{ slot_practice_id: slotPracticeId }
+			{ slot_practice_id: slotPracticeId, complaint: keluhan }
 		);
 
 		await Promise.all([fetchAppointments(), fetchSchedules()]);

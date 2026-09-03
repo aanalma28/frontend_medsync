@@ -155,6 +155,7 @@
 					// Extract JWT + user from JSON response body
 					const result = await response.json();
 					const { accessToken, user } = result.data;
+					console.log(user);
 
 					// Store JWT strictly in memory (never in localStorage/sessionStorage)
 					setAuth(accessToken, user);
@@ -163,7 +164,7 @@
 					const dashboardPath =
 						user.role.toLowerCase() === 'patient'
 							? '/pasien/dashboard'
-							: user.role.toLowerCase() === 'doctor'
+							: user.role.toLowerCase() === 'general_doctor'
 								? '/doctor/dashboard'
 								: user.role.toLowerCase() === 'pharmacist'
 									? '/apoteker/dashboard'

@@ -69,6 +69,7 @@ import {
 	let bookingSuccessData = $state<any | null>(null);
 	let showSuccessModal = $state(false);
 	let isCancellingId = $state<string | null>(null);
+	let keluhan = $state('');
 
 	onMount(async () => {
 		try {
@@ -117,6 +118,7 @@ import {
 		selectedSlotId = '';
 		selectedSlotInfo = null;
 		bookingError = null;
+		keluhan = '';
 		fetchSchedules();
 	}
 
@@ -144,6 +146,7 @@ import {
 		selectedSlotId = '';
 		selectedSlotInfo = null;
 		bookingError = null;
+		keluhan = '';
 		showApptModal = true;
 		fetchSchedules();
 	}
@@ -155,7 +158,7 @@ import {
 		bookingError = null;
 
 		try {
-			const res = await createAppointment(selectedSlotId);
+			const res = await createAppointment(selectedSlotId, keluhan);
 			bookingSuccessData = res.data;
 			showApptModal = false;
 			showSuccessModal = true;
@@ -896,6 +899,20 @@ import {
 												<p class="font-bold text-slate-900">⏰ {selectedSlotInfo.slotName} ({selectedSlotInfo.time})</p>
 											</div>
 										</div>
+									</div>
+
+									<div class="mt-4">
+										<label class="block">
+											<span class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase">
+												Keluhan Medis
+											</span>
+											<textarea
+												bind:value={keluhan}
+												placeholder="Tuliskan keluhan atau gejala yang Anda rasakan..."
+												rows="3"
+												class="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+											></textarea>
+										</label>
 									</div>
 								{/if}
 
