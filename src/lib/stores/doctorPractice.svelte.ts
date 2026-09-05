@@ -11,7 +11,7 @@ export type RegisteredPatient = {
 	timeSlot: string;
 	status: 'Sedang Diperiksa' | 'Menunggu' | 'Selesai' | 'Dibatalkan';
 	complaint?: string;
-	detailedSymptoms: string;
+	detail_sympton?: string;
 	vitalSigns?: string;
 	isUrgent?: boolean;
 };
@@ -183,16 +183,15 @@ export async function fetchSchedules(params?: { date_from?: string; date_to?: st
 					(slot.appointments || []).map((apt: any) => ({
 						id: apt.id,
 						patientId: apt.patient?.medical_record_number || 'RM-000',
-						patientName: apt.patient?.name || 'Pasien',
-						age: calculateAge(apt.patient?.birth_date),
-						gender: 'Perempuan',
+						patientName: apt.patient?.patient_name || 'Pasien',
+						age: apt.patient?.patient_age || 99,
+						gender: apt.patient?.gender || 'Perempuan',
 						phone: apt.patient?.phone || '0812-0000-0000',
 						queueNumber: apt.queue_number,
 						timeSlot: `${slot.start_hour} WIB`,
 						status: mapAppointmentStatus(apt.status),
 						complaint: apt.patient.complaint,
-						detailedSymptoms: 'Terdaftar melalui pendaftaran online MedSync.',
-						vitalSigns: 'TD: 120/80 mmHg | Suhu: 36.8°C'
+						detailedSymptoms: apt.patient?.detail_sympton || 'Terdaftar melalui pendaftaran online MedSync.',
 					}))
 				);
 
@@ -231,16 +230,15 @@ export async function fetchTodayPatients() {
 			todayPatients = response.data.patients.map((item: any) => ({
 				id: item.appointment_id,
 				patientId: item.patient?.medical_record_number || 'RM-000',
-				patientName: item.patient?.name || 'Pasien Hari Ini',
-				age: calculateAge(item.patient?.birth_date),
-				gender: 'Laki-laki',
+				patientName: item.patient?.patient_name || 'Pasien Hari Ini',
+				age: item.patient?.patient_age || '99',
+				gender: item.patient?.gender == "LAKILAKI" ? 'Laki-laki' : 'Perempuan',
 				phone: item.patient?.phone || '0812-0000-0000',
 				queueNumber: item.queue_number,
 				timeSlot: `${item.slot?.start_hour || '08:00'} WIB`,
 				status: mapAppointmentStatus(item.status),
-				complaint: 'Pemeriksaan Kesehatan Poli',
-				detailedSymptoms: 'Pasien datang sesuai nomor antrean.',
-				vitalSigns: 'TD: 120/80 mmHg | Suhu: 36.6°C'
+				complaint: item.patient?.complaint || 'Pemeriksaan Kesehatan Poli',
+				detail_sympton: item.patient?.detail_sympton || 'Pasien datang sesuai nomor antrean.',
 			}));
 		}
 		return todayPatients;

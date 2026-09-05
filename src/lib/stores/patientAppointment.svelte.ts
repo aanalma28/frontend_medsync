@@ -58,6 +58,14 @@ export type PatientAppointment = {
 	};
 };
 
+export type AppoinmentInputs = {
+	patient_name: string,
+	patient_age: number,
+	gender: string,
+	complaint: string,
+	detail_sympton: string,
+}
+
 export function parseBackendError(err: any): string {
 	if (!err) return 'Terjadi kesalahan yang tidak diketahui';
 	const rawMessage = err?.response?.message || err?.message || err;
@@ -164,20 +172,29 @@ export async function fetchAppointments(params?: {
 	}
 }
 
-export async function createAppointment(slotPracticeId: string, keluhan?: string) {
+export async function createAppointment(slotPracticeId: string, appoinmentInputs: AppoinmentInputs) {
 	isSubmitting = true;
 	error = null;
+	console.log(appoinmentInputs)
 
 	try {
 		const response = await api.post<{ statusCode: number; message: string; data: any }>(
 			'/patient/dashboard/appointments',
-			{ slot_practice_id: slotPracticeId, complaint: keluhan }
+			{
+				slot_practice_id: slotPracticeId,
+				patient_name: appoinmentInputs.patient_name,
+				patient_age: appoinmentInputs.patient_age,
+				gender: appoinmentInputs.gender,
+				complaint: appoinmentInputs.complaint,
+				detail_sympton: appoinmentInputs.detail_sympton,
+			}
 		);
 
 		await Promise.all([fetchAppointments(), fetchSchedules()]);
 		return response;
 	} catch (err: any) {
 		const parsed = parseBackendError(err);
+		console.log(parsed)
 		error = parsed;
 		throw new Error(parsed);
 	} finally {

@@ -532,7 +532,7 @@
 												Rincian Gejala & Catatan Pasien
 											</p>
 											<p class="mt-1 text-xs leading-relaxed text-slate-200">
-												{activePatient.detailedSymptoms}
+												{activePatient.detail_sympton}
 											</p>
 										</div>
 
