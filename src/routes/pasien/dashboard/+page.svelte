@@ -911,100 +911,109 @@
 										</div>
 									{:else}
 										{#each patientAppointmentStore.schedules as doc (doc.id)}
-											<div
-												class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-											>
-												<!-- Header Dokter -->
+											{@const isAllClosed = doc.slots.filter(
+												(item) => item.status_slot === 'CLOSED'
+											)}
+											{#if !(doc.slots.length === isAllClosed.length)}
 												<div
-													class="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between"
+													class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
 												>
-													<div>
-														<div class="flex items-center gap-2">
-															<span
-																class="rounded bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800 uppercase"
-															>
-																{doc.doctor.department?.name || 'Poliklinik'}
-															</span>
-															{#if doc.doctor.staff_code}
-																<span class="text-xs font-bold text-slate-400">
-																	Kode: {doc.doctor.staff_code}
-																</span>
-															{/if}
-														</div>
-														<h3 class="mt-1 text-lg font-bold text-slate-900">{doc.doctor.name}</h3>
-													</div>
+													<!-- Header Dokter -->
 													<div
-														class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"
+														class="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between"
 													>
-														📅 {formatDate(doc.practice_date)}
+														<div>
+															<div class="flex items-center gap-2">
+																<span
+																	class="rounded bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800 uppercase"
+																>
+																	{doc.doctor.department?.name || 'Poliklinik'}
+																</span>
+																{#if doc.doctor.staff_code}
+																	<span class="text-xs font-bold text-slate-400">
+																		Kode: {doc.doctor.staff_code}
+																	</span>
+																{/if}
+															</div>
+															<h3 class="mt-1 text-lg font-bold text-slate-900">
+																{doc.doctor.name}
+															</h3>
+														</div>
+														<div
+															class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"
+														>
+															📅 {formatDate(doc.practice_date)}
+														</div>
+													</div>
+
+													<!-- Grid Slot Praktik Dokter -->
+													<div>
+														<p
+															class="mb-2 text-xs font-bold tracking-wider text-slate-400 uppercase"
+														>
+															Pilih Slot Sesi Praktik:
+														</p>
+														<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+															{#each doc.slots as slot (slot.id)}
+																{@const isFull =
+																	slot.status_slot === 'CLOSED' ||
+																	slot.remaining_quota <= 0 ||
+																	!slot.is_active}
+																{@const isSelected = selectedSlotId === slot.id}
+																<button
+																	type="button"
+																	disabled={isFull}
+																	onclick={() => selectSlot(doc, slot)}
+																	class="relative flex flex-col justify-between rounded-xl border-2 p-3 text-left transition-all {isFull
+																		? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-75'
+																		: isSelected
+																			? 'border-sky-500 bg-sky-50 shadow-md ring-2 shadow-sky-100 ring-sky-200'
+																			: 'border-slate-200 bg-white text-slate-800 hover:border-sky-300 hover:shadow-sm'}"
+																>
+																	<div class="flex items-center justify-between">
+																		<span class="text-xs font-black text-slate-700 uppercase"
+																			>{slot.name}</span
+																		>
+																		{#if isFull}
+																			<span
+																				class="rounded bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-700 uppercase"
+																			>
+																				FULL / Ditutup
+																			</span>
+																		{:else if isSelected}
+																			<span
+																				class="rounded-full bg-sky-600 px-2 py-0.5 text-[9px] font-black text-white"
+																			>
+																				✓ Dipilih
+																			</span>
+																		{:else}
+																			<span
+																				class="rounded bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-800 uppercase"
+																			>
+																				OPEN
+																			</span>
+																		{/if}
+																	</div>
+
+																	<div class="mt-2 space-y-1">
+																		<p class="text-sm font-bold text-slate-900">
+																			⏰ {slot.start_hour} - {slot.end_hour} WIB
+																		</p>
+																		<p
+																			class="text-xs font-medium {isFull
+																				? 'text-slate-400'
+																				: 'text-emerald-600'}"
+																		>
+																			📊 Sisa Kuota: <strong>{slot.remaining_quota}</strong> / {slot.max_patient}
+																			pasien
+																		</p>
+																	</div>
+																</button>
+															{/each}
+														</div>
 													</div>
 												</div>
-
-												<!-- Grid Slot Praktik Dokter -->
-												<div>
-													<p class="mb-2 text-xs font-bold tracking-wider text-slate-400 uppercase">
-														Pilih Slot Sesi Praktik:
-													</p>
-													<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-														{#each doc.slots as slot (slot.id)}
-															{@const isFull =
-																slot.status_slot === 'CLOSED' ||
-																slot.remaining_quota <= 0 ||
-																!slot.is_active}
-															{@const isSelected = selectedSlotId === slot.id}
-															<button
-																type="button"
-																disabled={isFull}
-																onclick={() => selectSlot(doc, slot)}
-																class="relative flex flex-col justify-between rounded-xl border-2 p-3 text-left transition-all {isFull
-																	? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-75'
-																	: isSelected
-																		? 'border-sky-500 bg-sky-50 shadow-md ring-2 shadow-sky-100 ring-sky-200'
-																		: 'border-slate-200 bg-white text-slate-800 hover:border-sky-300 hover:shadow-sm'}"
-															>
-																<div class="flex items-center justify-between">
-																	<span class="text-xs font-black text-slate-700 uppercase"
-																		>{slot.name}</span
-																	>
-																	{#if isFull}
-																		<span
-																			class="rounded bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-700 uppercase"
-																		>
-																			FULL / Ditutup
-																		</span>
-																	{:else if isSelected}
-																		<span
-																			class="rounded-full bg-sky-600 px-2 py-0.5 text-[9px] font-black text-white"
-																		>
-																			✓ Dipilih
-																		</span>
-																	{:else}
-																		<span
-																			class="rounded bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-800 uppercase"
-																		>
-																			OPEN
-																		</span>
-																	{/if}
-																</div>
-
-																<div class="mt-2 space-y-1">
-																	<p class="text-sm font-bold text-slate-900">
-																		⏰ {slot.start_hour} - {slot.end_hour} WIB
-																	</p>
-																	<p
-																		class="text-xs font-medium {isFull
-																			? 'text-slate-400'
-																			: 'text-emerald-600'}"
-																	>
-																		📊 Sisa Kuota: <strong>{slot.remaining_quota}</strong> / {slot.max_patient}
-																		pasien
-																	</p>
-																</div>
-															</button>
-														{/each}
-													</div>
-												</div>
-											</div>
+											{/if}
 										{/each}
 									{/if}
 								</div>

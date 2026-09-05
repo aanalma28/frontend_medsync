@@ -62,11 +62,14 @@ export type PracticeSessionCard = {
 
 export type MedicalRecordEntry = {
 	id: string;
+	patient_name: string;
+	patient_age: number;
+	gender: string;
 	visitDate: string;
 	sessionType: string;
 	complaint: string;
 	diagnosis: string;
-	prescription: Array<{ name: string; usage: string }>;
+	prescription: Array<{ name: string; rules_using: string }>;
 	vitalSigns: string;
 	doctorNotes: string;
 	status: 'Selesai' | 'Rawat Jalan' | 'Rujukan' | 'Kontrol Ulang';
@@ -264,6 +267,7 @@ export async function fetchPatientHistory(search: string = '') {
 			const patientMap = new Map<string, DoctorExaminedPatient>();
 
 			response.data.forEach((mh: any) => {
+				console.log(mh)
 				const rm = mh.patient?.medical_record_number || 'RM-000';
 				const dateDisplay = mh.createdAt
 					? new Date(mh.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -275,9 +279,10 @@ export async function fetchPatientHistory(search: string = '') {
 					sessionType: 'Konsultasi & Pemeriksaan Dokter',
 					complaint: mh.complaint || 'Keluhan Pasien',
 					diagnosis: mh.diagnosis || 'Diagnosis Dokter',
-					prescription: mh.recipe
-						? [{ name: `Resep Trx #${mh.recipe.no_trx}`, usage: 'Sesuai Petunjuk Apotek' }]
-						: [{ name: 'Paracetamol 500mg', usage: '3x1 Tablet' }],
+					patient_name: mh.patient_name,
+					patient_age: mh.patient_age,
+					gender: mh.gender,
+					prescription: mh.recipe?.detailRecipe || [],
 					vitalSigns: 'TD: 120/80 mmHg | Suhu: 36.8°C',
 					doctorNotes: mh.notes || 'Catatan pemeriksaan dokter.',
 					status: mh.appointment?.status === 'COMPLETED' ? 'Selesai' : 'Rawat Jalan'
