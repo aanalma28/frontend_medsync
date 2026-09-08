@@ -62,13 +62,28 @@ export interface CreatePatientPayload {
 	address: string;
 	birth_date: string;
 	accepted_terms?: boolean;
+	/** Optional family members data — array of patient objects (optional) */
+	family_members?: Array<{
+		name: string;
+		gender?: string;
+		age?: number;
+		alergi_obat?: string;
+	}>;
 }
 
 export interface CreateStaffPayload {
 	name: string;
 	email: string;
 	password: string;
-	role: 'SUPERADMIN' | 'MASTERADMIN' | 'REGISTER_ADMIN' | 'DOCTOR' | 'PHARMACIST' | 'NURSE';
+	role:
+		| 'OWNER'
+		| 'SUPERADMIN'
+		| 'MASTERADMIN'
+		| 'REGISTER_ADMIN'
+		| 'GENERAL_DOCTOR'
+		| 'SPECIALIST_DOCTOR'
+		| 'PHARMACIST'
+		| 'NURSE';
 	departmen_id: string;
 	phone: string;
 	address?: string;
@@ -91,8 +106,8 @@ function normalizeUserRole(role: string): string {
 	if (!role) return 'pasien';
 	const r = role.toUpperCase();
 	if (r === 'SUPERADMIN') return 'superadmin';
-	if (r === 'MASTERADMIN' || r === 'REGISTER_ADMIN' || r === 'ADMIN') return 'admin';
-	if (r === 'DOCTOR') return 'dokter';
+	if (r === 'MASTERADMIN' || r === 'REGISTER_ADMIN' || r === 'ADMIN' || r === 'OWNER') return 'admin';
+	if (r === 'DOCTOR' || r === 'GENERAL_DOCTOR' || r === 'SPECIALIST_DOCTOR') return 'dokter';
 	if (r === 'PHARMACIST') return 'apoteker';
 	if (r === 'NURSE') return 'perawat';
 	if (r === 'PATIENT') return 'pasien';

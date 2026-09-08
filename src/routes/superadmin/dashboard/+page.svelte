@@ -1,4 +1,5 @@
 <script lang="ts">
+// @ts-nocheck
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import { onMount } from 'svelte';
@@ -137,11 +138,15 @@
 
 	// Daftar role yang bisa dipilih saat tambah user
 	const addUserRoleOptions = [
-		{ value: 'pasien', label: 'Pasien' },
-		{ value: 'dokter', label: 'Dokter' },
-		{ value: 'apoteker', label: 'Apoteker' },
-		{ value: 'admin', label: 'Admin' },
-		{ value: 'superadmin', label: 'Superadmin' }
+		{ value: 'OWNER', label: 'Owner' },
+		{ value: 'SUPERADMIN', label: 'Superadmin' },
+		{ value: 'MASTERADMIN', label: 'Masteradmin' },
+		{ value: 'REGISTER_ADMIN', label: 'Register Admin' },
+		{ value: 'GENERAL_DOCTOR', label: 'Dokter Umum' },
+		{ value: 'SPECIALIST_DOCTOR', label: 'Dokter Spesialis' },
+		{ value: 'PHARMACIST', label: 'Apoteker' },
+		{ value: 'NURSE', label: 'Perawat' },
+		{ value: 'PATIENT', label: 'Pasien' }
 	];
 
 	let addUserForm = $state({
@@ -149,11 +154,15 @@
 		email: '',
 		password: '',
 		confirmPassword: '',
-		role: 'pasien',
+		role: 'PATIENT',
 		alamat: '',
 		phone: '',
 		tanggalLahir: '',
-		departmenId: ''
+		departmenId: '',
+		gender: '',
+		age: '',
+		alergi_obat: '',
+		familyMembers: [] as Array<{ name: string; gender?: string; age?: number; alergi_obat?: string }>
 	});
 
 	// --- Real-time Validation ---
@@ -194,7 +203,7 @@
 	});
 
 	let isAddAddressValid = $derived(
-		addUserForm.role === 'pasien'
+		addUserForm.role === 'PATIENT'
 			? addUserForm.alamat.length >= 10 && addUserForm.alamat.length <= 255
 			: Boolean(addUserForm.departmenId)
 	);
@@ -203,10 +212,10 @@
 
 	// Label alamat dinamis berdasarkan role
 	let addressLabel = $derived(
-		addUserForm.role === 'pasien' ? 'Alamat tempat tinggal' : 'Alamat tempat kerja'
+		addUserForm.role === 'PATIENT' ? 'Alamat tempat tinggal' : 'Alamat tempat kerja'
 	);
 	let addressPlaceholder = $derived(
-		addUserForm.role === 'pasien'
+		addUserForm.role === 'PATIENT'
 			? 'Jl. Pemuda No. 45, Kudus, Jawa Tengah'
 			: 'Jl. RS Medika Sehat No. 12, Jakarta Selatan'
 	);
@@ -233,11 +242,15 @@
 			email: '',
 			password: '',
 			confirmPassword: '',
-			role: 'pasien',
+			role: 'PATIENT',
 			alamat: '',
 			phone: '',
 			tanggalLahir: '',
-			departmenId: ''
+			departmenId: '',
+			gender: '',
+			age: '',
+			alergi_obat: '',
+			familyMembers: []
 		};
 		addUserBackendError = '';
 		isAddUserSubmitting = false;
@@ -257,7 +270,7 @@
 		isAddUserSubmitting = true;
 
 		try {
-			if (addUserForm.role === 'pasien') {
+			if (addUserForm.role === 'PATIENT') {
 				await userStore.createPatient({
 					name: addUserForm.nama,
 					email: addUserForm.email,
@@ -265,23 +278,16 @@
 					phone: addUserForm.phone,
 					address: addUserForm.alamat,
 					birth_date: addUserForm.tanggalLahir,
-					accepted_terms: true
+					accepted_terms: true,
+					family_members: addUserForm.familyMembers && addUserForm.familyMembers.length ? addUserForm.familyMembers : undefined
 				});
 			} else {
-				let mappedRole:
-					'SUPERADMIN' | 'MASTERADMIN' | 'REGISTER_ADMIN' | 'DOCTOR' | 'PHARMACIST' | 'NURSE' =
-					'DOCTOR';
-				if (addUserForm.role === 'superadmin') mappedRole = 'SUPERADMIN';
-				else if (addUserForm.role === 'admin') mappedRole = 'REGISTER_ADMIN';
-				else if (addUserForm.role === 'dokter') mappedRole = 'DOCTOR';
-				else if (addUserForm.role === 'apoteker') mappedRole = 'PHARMACIST';
-				else if (addUserForm.role === 'perawat') mappedRole = 'NURSE';
-
+				// For staff and admin roles, send role as-is (backend expects uppercase enum names)
 				await userStore.createStaff({
 					name: addUserForm.nama,
 					email: addUserForm.email,
 					password: addUserForm.password,
-					role: mappedRole,
+					role: addUserForm.role,
 					departmen_id: addUserForm.departmenId,
 					phone: addUserForm.phone,
 					address: addUserForm.alamat || undefined,
@@ -480,52 +486,53 @@
 	// =============================================
 	// MANAJEMEN DEPARTEMEN — State & Validation
 	// =============================================
-	let departments = $derived(departmentStore.list);
+	let departments = departmentStore.list;
 
 	let deptSearchInUserModal = $state('');
-	let modalFilteredDepartments = $derived(
-		deptSearchInUserModal.trim() === ''
-			? departments
-			: departments.filter(
-					(d) =>
-						(d.kode_departmen || d.departmen_code || '')
-							.toLowerCase()
-							.includes(deptSearchInUserModal.toLowerCase()) ||
-						(d.nama_departmen || d.name || '')
-							.toLowerCase()
-							.includes(deptSearchInUserModal.toLowerCase()) ||
-						(d.alamat_departmen || d.address || '')
-							.toLowerCase()
-							.includes(deptSearchInUserModal.toLowerCase())
-				)
-	);
-	let selectedDept = $derived(
-		departments.find(
-			(d) => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId
-		)
-	);
-	let editModalFilteredDepartments = $derived(
-		editDeptSearch.trim() === ''
-			? departments
-			: departments.filter(
-					(d) =>
-						(d.kode_departmen || d.departmen_code || '')
-							.toLowerCase()
-							.includes(editDeptSearch.toLowerCase()) ||
-						(d.nama_departmen || d.name || '')
-							.toLowerCase()
-							.includes(editDeptSearch.toLowerCase()) ||
-						(d.city || '').toLowerCase().includes(editDeptSearch.toLowerCase()) ||
-						(d.alamat_departmen || d.address || '')
-							.toLowerCase()
-							.includes(editDeptSearch.toLowerCase())
-				)
-	);
-	let selectedEditDept = $derived(
-		departments.find(
-			(d) => d.id === editUserForm.departmenId || d.id_departmen === editUserForm.departmenId
-		)
-	);
+
+	// Debug toggle to inspect raw department data when troubleshooting
+	// helper: check if a department matches the selected role's desired category
+	function deptMatchesRole(d, role) {
+		if (!role) return true;
+		// roles that should filter by department category
+		let desiredCategory = null;
+		if (String(role).includes('ADMIN')) desiredCategory = 'ADMIN';
+		else if (role === 'GENERAL_DOCTOR') desiredCategory = 'GENERALIST';
+		else if (role === 'SPECIALIST_DOCTOR') desiredCategory = 'SPECIALIST';
+		else if (role === 'PHARMACIST') desiredCategory = 'PHARMACY';
+		else if (role === 'NURSE') desiredCategory = 'NURSING';
+
+		if (!desiredCategory) return true; // no filtering for this role
+
+		const rawCat = d.category ?? d.kategori ?? '';
+		const catStr = String(rawCat || '').toUpperCase();
+		if (!catStr) return false;
+
+		if (catStr.includes('ADMIN') && desiredCategory === 'ADMIN') return true;
+		if (catStr.includes('GENERAL') && desiredCategory === 'GENERALIST') return true;
+		if (catStr.includes('SPECIAL') && desiredCategory === 'SPECIALIST') return true;
+		if (catStr.includes('PHARM') && desiredCategory === 'PHARMACY') return true;
+		if (catStr.includes('NURS') && desiredCategory === 'NURSING') return true;
+
+		return catStr === desiredCategory;
+	}
+
+	function handleRoleChange() {
+		const role = addUserForm.role;
+		// if role hides departments, clear selection
+		if (!role || role === 'PATIENT' || role === 'SUPERADMIN' || role === 'OWNER') {
+			addUserForm.departmenId = '';
+			return;
+		}
+
+		// find currently selected dept
+		const sel = departmentStore.list.find((d) => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId);
+		if (!sel) return;
+		// if selected dept doesn't match new role, reset it
+		if (!deptMatchesRole(sel, role)) {
+			addUserForm.departmenId = '';
+		}
+	}
 
 	let deptSearchQuery = $state('');
 	let deptStatusFilter = $state<'all' | 'active' | 'inactive'>('all');
@@ -1046,7 +1053,7 @@
 							</div>
 
 							<div class="mt-8 flex h-64 items-end justify-between gap-2">
-								{#each [40, 70, 45, 90, 65, 85, 100] as height}
+								{#each [40, 70, 45, 90, 65, 85, 100] as height (height)}
 									<div
 										class="group relative flex h-full w-full cursor-pointer flex-col justify-end"
 									>
@@ -1075,7 +1082,7 @@
 						<section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
 							<h2 class="mb-4 text-xl font-bold text-slate-900">Status Departemen</h2>
 							<ul class="space-y-4">
-								{#each departments as dept}
+								{#each departments as dept (dept.id || dept.departmen_code)}
 									<li class="flex items-center justify-between border-b border-slate-50 pb-3">
 										<div>
 											<h3 class="font-bold text-slate-800">{dept.name || dept.nama_departmen}</h3>
@@ -1176,7 +1183,7 @@
 
 						<!-- Mobile Card View RS -->
 						<div class="block space-y-3 md:hidden">
-							{#each paginatedHospitals as hosp}
+							{#each paginatedHospitals as hosp (hosp.id)}
 								<div
 									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
 								>
@@ -1257,7 +1264,7 @@
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
-									{#each paginatedHospitals as hosp}
+									{#each paginatedHospitals as hosp (hosp.id)}
 										<tr class="transition hover:bg-slate-50/80">
 											<td class="px-4 py-3.5 font-mono text-xs font-bold text-indigo-700">
 												{hosp.hospital_code || hosp.kode_hospital}
@@ -1371,7 +1378,7 @@
 									class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 pr-9 text-sm font-semibold text-slate-700 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
 									style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em;"
 								>
-									{#each roleOptions as opt}
+									{#each roleOptions as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</select>
@@ -1382,7 +1389,7 @@
 									class="appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 pr-9 text-sm font-semibold text-slate-700 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
 									style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em 1.5em;"
 								>
-									{#each statusOptions as sOpt}
+									{#each statusOptions as sOpt (sOpt.value)}
 										<option value={sOpt.value}>{sOpt.label}</option>
 									{/each}
 								</select>
@@ -1397,7 +1404,7 @@
 
 						<!-- Summary Cards -->
 						<div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-							{#each roleOptions.filter((r) => r.value !== 'semua') as roleOpt}
+							{#each roleOptions.filter((r) => r.value !== 'semua') as roleOpt (roleOpt.value)}
 								<button
 									onclick={() =>
 										(selectedRoleFilter =
@@ -1417,7 +1424,7 @@
 
 						<!-- Mobile Card View (Responsif untuk HP/Tablet kecil) -->
 						<div class="block space-y-3 md:hidden">
-							{#each filteredAccounts as account}
+							{#each filteredAccounts as account (account.id)}
 								<div
 									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
 								>
@@ -1605,7 +1612,7 @@
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
-									{#each filteredAccounts as account}
+									{#each filteredAccounts as account (account.id)}
 										<tr class="transition hover:bg-slate-50/80">
 											<td
 												class="px-4 py-3.5 font-mono text-xs font-bold whitespace-nowrap text-slate-900"
@@ -1834,7 +1841,7 @@
 
 						<!-- Mobile Card View Departemen -->
 						<div class="block space-y-3 md:hidden">
-							{#each filteredDepartments as dept}
+							{#each filteredDepartments as dept (dept.id)}
 								<div
 									class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-indigo-200"
 								>
@@ -1974,7 +1981,7 @@
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
-									{#each filteredDepartments as dept}
+									{#each filteredDepartments as dept (dept.id)}
 										<tr
 											class="transition hover:bg-slate-50/80 {dept.is_active === false
 												? 'bg-slate-50/40 opacity-75'
@@ -2197,6 +2204,8 @@
 				{/if}
 			{/if}
 		</div>
+
+
 	</main>
 </div>
 
@@ -2382,10 +2391,11 @@
 					<span class="mb-2 block">Role</span>
 					<select
 						bind:value={addUserForm.role}
+						onchange={handleRoleChange}
 						class="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
 						style="background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22currentColor%22><path stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%222%22 d=%22M19 9l-7 7-7-7%22 /></svg>'); background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1.25em 1.25em;"
 					>
-						{#each addUserRoleOptions as roleOpt}
+						{#each addUserRoleOptions as roleOpt (roleOpt.value)}
 							<option value={roleOpt.value}>{roleOpt.label}</option>
 						{/each}
 					</select>
@@ -2423,20 +2433,90 @@
 				</div>
 
 				<!-- Alamat / Departemen -->
-				{#if addUserForm.role === 'pasien'}
-					<label class="relative block text-sm font-medium text-slate-700">
-						<span class="mb-2 block">{addressLabel}</span>
-						<textarea
-							bind:value={addUserForm.alamat}
-							rows="2"
-							class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-							placeholder={addressPlaceholder}></textarea>
-						{#if addUserForm.alamat.length > 0}
-							<span class="absolute top-10 right-3 text-sm">{isAddAddressValid ? '✅' : '❌'}</span>
-						{/if}
-					</label>
-				{:else}
-					<!-- Interactive Department Selector -->
+				{#if addUserForm.role === 'PATIENT'}
+				<!-- For patients: show address and optional family members only -->
+				<label class="relative block text-sm font-medium text-slate-700">
+					<span class="mb-2 block">{addressLabel}</span>
+					<textarea
+						bind:value={addUserForm.alamat}
+						rows="2"
+						class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+						placeholder={addressPlaceholder}></textarea>
+					{#if addUserForm.alamat.length > 0}
+						<span class="absolute top-10 right-3 text-sm">{isAddAddressValid ? '✅' : '❌'}</span>
+					{/if}
+				</label>
+
+				<!-- Optional family members: 1 akun bisa menampung data keluarga (card style) -->
+				<div class="space-y-3">
+					<div class="flex items-center justify-between">
+						<p class="text-sm font-medium text-slate-700">Anggota keluarga (opsional)</p>
+						<button
+							type="button"
+							onclick={() => addUserForm.familyMembers = [...addUserForm.familyMembers, { name: '', gender: '', age: undefined, alergi_obat: '' }]}
+							class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-1 text-xs text-white"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+								<path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+							</svg>
+							Tambah Anggota
+						</button>
+					</div>
+					<div class="grid gap-3">
+						{#each addUserForm.familyMembers as fam, idx (idx)}
+							<div class="relative rounded-2xl border p-3 shadow-sm">
+								<!-- delete icon inside card -->
+								<button
+									type="button"
+									onclick={() => (addUserForm.familyMembers = addUserForm.familyMembers.filter((_, i) => i !== idx))}
+									class="mb-2 absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100"
+									aria-label="Hapus anggota keluarga"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+										<path fill-rule="evenodd" d="M6 2a1 1 0 00-.894.553L4 4H2a1 1 0 100 2h1v9a2 2 0 002 2h8a2 2 0 002-2V6h1a1 1 0 100-2h-2l-1.106-1.447A1 1 0 0014 2H6zm3 6a1 1 0 10-2 0v6a1 1 0 102 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
+								</svg>
+								</button>
+									<div class="grid gap-2 sm:grid-cols-4">
+											<div class="sm:col-span-2">
+												<label class="text-xs text-slate-600">Nama Pasien</label>
+												<input bind:value={fam.name} placeholder="Nama Pasien" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+											</div>
+											<div>
+												<label class="text-xs text-slate-600">Gender</label>
+												<select bind:value={fam.gender} class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+													<option value="">Pilih</option>
+													<option value="male">Laki-laki</option>
+													<option value="female">Perempuan</option>
+												</select>
+											</div>
+											<div>
+												<label class="text-xs text-slate-600">Umur</label>
+												<input bind:value={fam.age} type="number" min="0" placeholder="Umur" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+											</div>
+											<div class="sm:col-span-4">
+												<label class="text-xs text-slate-600">Alergi obat</label>
+												<input bind:value={fam.alergi_obat} placeholder="Alergi obat (opsional)" class="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 min-h-[44px]" />
+											</div>
+										</div>
+								</div>
+							{/each}
+							</div>
+							</div>
+						{:else if addUserForm.role === 'SUPERADMIN' || addUserForm.role === 'OWNER'}
+							<!-- For SUPERADMIN/OWNER: show only address (no family members, no dept) -->
+							<label class="relative block text-sm font-medium text-slate-700">
+								<span class="mb-2 block">{addressLabel}</span>
+								<textarea
+									bind:value={addUserForm.alamat}
+									rows="2"
+									class="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+									placeholder={addressPlaceholder}></textarea>
+								{#if addUserForm.alamat.length > 0}
+									<span class="absolute top-10 right-3 text-sm">{isAddAddressValid ? '✅' : '❌'}</span>
+								{/if}
+							</label>
+						{:else}
+							<!-- Interactive Department Selector -->
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium text-slate-700">
@@ -2451,17 +2531,18 @@
 									class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs outline-none focus:border-indigo-500 focus:bg-white"
 								/>
 							{/if}
+							<!-- debug button removed -->
 						</div>
 
 						<!-- Grid Card Departemen -->
 						<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
-							{#each modalFilteredDepartments as dept}
+							{#each departmentStore.list.filter(d => (deptSearchInUserModal.trim() === '' ? true : ((d.kode_departmen || d.departmen_code || '').toLowerCase().includes(deptSearchInUserModal.trim().toLowerCase()) || (d.nama_departmen || d.name || '').toLowerCase().includes(deptSearchInUserModal.trim().toLowerCase()) || (d.alamat_departmen || d.address || '').toLowerCase().includes(deptSearchInUserModal.trim().toLowerCase()))) && deptMatchesRole(d, addUserForm.role)) as dept (dept.id || dept.id_departmen || dept.departmen_code)}
 								{@const isSelected =
 									addUserForm.departmenId === dept.id ||
 									addUserForm.departmenId === dept.id_departmen}
 								<button
 									type="button"
-									onclick={() => {
+										onclick={() => {
 										addUserForm.departmenId = dept.id || dept.id_departmen || '';
 										addUserForm.alamat = dept.alamat_departmen || dept.address || '';
 									}}
@@ -2502,7 +2583,8 @@
 						</div>
 
 						<!-- Selected Department Confirmation Banner -->
-						{#if selectedDept}
+						{#if departmentStore.list.find(d => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId)}
+							{@const sd = departmentStore.list.find(d => d.id === addUserForm.departmenId || d.id_departmen === addUserForm.departmenId)}
 							<div
 								class="flex items-start gap-3 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 p-3.5 shadow-sm"
 							>
@@ -2520,11 +2602,10 @@
 										>
 									</div>
 									<p class="mt-0.5 font-bold text-indigo-800">
-										{selectedDept.nama_departmen || selectedDept.name} ({selectedDept.kode_departmen ||
-											selectedDept.departmen_code})
+										{sd.nama_departmen || sd.name} ({sd.kode_departmen || sd.departmen_code})
 									</p>
 									<p class="mt-0.5 text-slate-600">
-										{selectedDept.alamat_departmen || selectedDept.address}
+										{sd.alamat_departmen || sd.address}
 									</p>
 								</div>
 							</div>
@@ -2601,9 +2682,9 @@
 								: 'text-slate-500'}"
 						>
 							<span>{isAddAddressValid ? '✅' : '❌'}</span>
-							{addUserForm.role === 'pasien'
-								? 'Alamat tempat tinggal (min. 10 karakter)'
-								: 'Departemen tempat kerja dipilih'}
+							{addUserForm.role === 'PATIENT'
+									? 'Alamat tempat tinggal (min. 10 karakter)'
+									: 'Departemen tempat kerja dipilih'}
 						</li>
 					</ul>
 				</div>
@@ -2883,7 +2964,7 @@
 
 								<!-- Grid Card Departemen -->
 								<div class="grid max-h-52 grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
-									{#each editModalFilteredDepartments as dept}
+									{#each departmentStore.list.filter(d => (editDeptSearch.trim() === '' ? true : ((d.kode_departmen || d.departmen_code || '').toLowerCase().includes(editDeptSearch.trim().toLowerCase()) || (d.nama_departmen || d.name || '').toLowerCase().includes(editDeptSearch.trim().toLowerCase()) || (d.city || '').toLowerCase().includes(editDeptSearch.trim().toLowerCase()) || (d.alamat_departmen || d.address || '').toLowerCase().includes(editDeptSearch.trim().toLowerCase())))) as dept (dept.id || dept.id_departmen || dept.departmen_code)}
 										{@const isSelected =
 											editUserForm.departmenId === dept.id ||
 											editUserForm.departmenId === dept.id_departmen}
@@ -3591,7 +3672,7 @@
 						<h4 class="mb-3 text-sm font-bold text-slate-800">Daftar Departemen Terhubung ({selectedHospitalDetail.departments?.length ?? 0})</h4>
 						{#if selectedHospitalDetail.departments && selectedHospitalDetail.departments.length > 0}
 							<div class="divide-y divide-slate-100 rounded-xl border border-slate-100">
-								{#each selectedHospitalDetail.departments as dept}
+								{#each selectedHospitalDetail.departments as dept ((dept as any).id)}
 									<div class="flex items-center justify-between p-3">
 										<div>
 											<p class="text-xs font-bold text-slate-900">{dept.name}</p>

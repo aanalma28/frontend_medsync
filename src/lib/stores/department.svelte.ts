@@ -9,6 +9,9 @@ export interface Department {
 	cabang?: string;
 	employee_count?: number;
 	is_active?: boolean;
+	// Category field added to support frontend filtering (e.g. ADMIN, GENERALIST, SPECIALIST, PHARMACY, NURSING)
+	category?: string;
+	kategori?: string;
 	// Property aliases for full backwards compatibility across UI components
 	id_departmen?: string;
 	kode_departmen?: string;
@@ -65,12 +68,14 @@ function normalizeDepartment(item: any): Department {
 	const rawCode = item.departmen_code || item.kode_departmen || item.code || '';
 	const rawAddress = item.address || item.alamat_departmen || '';
 	const rawCity = item.city || item.cabang || '';
+	const rawCategory = (item.category !== undefined && item.category !== null) ? item.category : (item.kategori !== undefined && item.kategori !== null) ? item.kategori : '';
 	const is_active = typeof item.is_active === 'boolean' ? item.is_active : true;
 
 	const name = unescapeHtml(rawName);
 	const departmen_code = unescapeHtml(rawCode);
 	const address = unescapeHtml(rawAddress);
 	const city = unescapeHtml(rawCity);
+	const category = unescapeHtml(String(rawCategory || '')) || undefined;
 	const employee_count = typeof item.employee_count === 'number' ? item.employee_count : 0;
 
 	return {
@@ -84,6 +89,8 @@ function normalizeDepartment(item: any): Department {
 		alamat_departmen: address,
 		city,
 		cabang: city,
+		category,
+		kategori: category,
 		employee_count,
 		is_active
 	};
@@ -110,7 +117,7 @@ export async function fetchDepartments(params?: { search?: string; page?: number
 		if (params?.is_active !== undefined) query.set('is_active', params.is_active);
 
 		const queryString = query.toString() ? `?${query.toString()}` : '';
-		const response = await api.get<DepartmentListResponse>(`/departments${queryString}`);
+		const response = await api.get<DepartmentListResponse>(`/departments${queryString}`);		
 
 		if (response && Array.isArray(response.data)) {
 			departmentsList = response.data.map(normalizeDepartment);

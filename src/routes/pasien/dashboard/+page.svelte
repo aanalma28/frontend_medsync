@@ -174,9 +174,17 @@
 
 		try {
 			const res = await createAppointment(selectedSlotId, appoinmentInputs);
-			bookingSuccessData = res.data;
-			showApptModal = false;
-			showSuccessModal = true;
+					bookingSuccessData = res.data;
+					// Clear inputs after successful booking
+					appoinmentInputs = {
+						patient_name: '',
+						gender: '',
+						patient_age: 0,
+						complaint: '',
+						detail_sympton: ''
+					};
+					showApptModal = false;
+					showSuccessModal = true;
 		} catch (err: any) {
 			bookingError = err.message || 'Gagal membuat janji temu.';
 		}
