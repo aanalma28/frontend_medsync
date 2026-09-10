@@ -37,6 +37,15 @@ let historyPrescriptions = $state<PatientPrescription[]>([]);
 let isLoading = $state<boolean>(false);
 let error = $state<string | null>(null);
 
+function extractPrescriptions(response: any): PatientPrescription[] {
+	if (Array.isArray(response)) return response;
+	if (Array.isArray(response?.data)) return response.data;
+	if (Array.isArray(response?.data?.prescriptions)) return response.data.prescriptions;
+	if (Array.isArray(response?.data?.items)) return response.data.items;
+	if (Array.isArray(response?.prescriptions)) return response.prescriptions;
+	return [];
+}
+
 export async function fetchPrescriptions(params?: {
 	status?: string;
 	type?: 'active' | 'history';
@@ -54,12 +63,13 @@ export async function fetchPrescriptions(params?: {
 			`/patient/dashboard/prescriptions${queryString}`
 		);
 
-		if (response && Array.isArray(response.data)) {
-			prescriptions = response.data;
-			activePrescriptions = response.data.filter(
+		const prescriptionItems = extractPrescriptions(response);
+		if (response) {
+			prescriptions = prescriptionItems;
+			activePrescriptions = prescriptionItems.filter(
 				(rx) => rx.status === 'PENDING' || rx.status === 'CONFIRMED'
 			);
-			historyPrescriptions = response.data.filter(
+			historyPrescriptions = prescriptionItems.filter(
 				(rx) => rx.status === 'COMPLETED' || rx.status === 'CANCELLED'
 			);
 		} else {

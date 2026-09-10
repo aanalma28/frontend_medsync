@@ -83,9 +83,7 @@
 	let familyFormError = $state<string | null>(null);
 	let familyForm = $state({ name: '', gender: '', age: 0, medicine_allergy: '' });
 	let appoinmentInputs = $state({
-		patient_name: '',
-		gender: '',
-		patient_age: 0,
+		patient_id: '',
 		complaint: '',
 		detail_sympton: ''
 	});
@@ -98,9 +96,7 @@
 
 	function selectFamilyMember(member: PatientFamilyMember) {
 		selectedFamilyMemberId = member.id;
-		appoinmentInputs.patient_name = member.name;
-		appoinmentInputs.gender = member.gender;
-		appoinmentInputs.patient_age = member.age;
+		appoinmentInputs.patient_id = member.id;
 	}
 
 	function editFamilyMember(member: PatientFamilyMember) {
@@ -134,20 +130,11 @@
 			await deleteFamilyMember(member.id);
 			if (selectedFamilyMemberId === member.id) {
 				selectedFamilyMemberId = '';
-				appoinmentInputs = { patient_name: '', gender: '', patient_age: 0, complaint: appoinmentInputs.complaint, detail_sympton: appoinmentInputs.detail_sympton };
+				appoinmentInputs = { patient_id: '', complaint: appoinmentInputs.complaint, detail_sympton: appoinmentInputs.detail_sympton };
 			}
 		} catch (err: any) {
 			alert(err.message || 'Gagal menghapus data keluarga.');
 		}
-	}
-
-	// Validasi input
-	let isNameValid = $derived(
-		appoinmentInputs.patient_name.length >= 3 && appoinmentInputs.patient_name.length <= 100
-	);
-
-	function handleAgeInput(e: any) {
-		appoinmentInputs.patient_age = e.target.value.replace(/\D/g, '');
 	}
 
 	onMount(async () => {
@@ -227,7 +214,7 @@
 		selectedSlotInfo = null;
 		bookingError = null;
 		selectedFamilyMemberId = '';
-		appoinmentInputs = { patient_name: '', gender: '', patient_age: 0, complaint: '', detail_sympton: '' };
+		appoinmentInputs = { patient_id: '', complaint: '', detail_sympton: '' };
 		appoinmentInputs.complaint = '';
 		showApptModal = true;
 		fetchSchedules();
@@ -247,9 +234,7 @@
 					bookingSuccessData = res.data;
 					// Clear inputs after successful booking
 					appoinmentInputs = {
-						patient_name: '',
-						gender: '',
-						patient_age: 0,
+						patient_id: '',
 						complaint: '',
 						detail_sympton: ''
 					};
@@ -1255,64 +1240,6 @@
 										</div>
 									</div>
 
-									<div class="mt-4">
-										<label class="relative block text-sm font-medium text-slate-700">
-											<span
-												class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-											>
-												Nama Lengkap
-											</span>
-											<input
-												bind:value={appoinmentInputs.patient_name}
-												class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-												placeholder="Sumardi Santoso"
-											/>
-											{#if appoinmentInputs.patient_name.length > 0}
-												<span class="absolute top-10 right-3 text-sm"
-													>{isNameValid ? '✅' : '❌'}</span
-												>
-											{/if}
-										</label>
-									</div>
-									<div class="mt-4">
-										<label class="relative block text-sm font-medium text-slate-700">
-											<span
-												class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-											>
-												Umur
-											</span>
-											<input
-												type="text"
-												bind:value={appoinmentInputs.patient_age}
-												oninput={handleAgeInput}
-												class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-												placeholder="Contoh: 12"
-											/>
-										</label>
-									</div>
-									<div class="mt-4">
-										<label class="relative block text-sm font-medium text-slate-700">
-											<span
-												class="mb-1.5 block text-xs font-bold tracking-wider text-slate-500 uppercase"
-											>
-												Jenis Kelamin
-											</span>
-											<select
-												bind:value={appoinmentInputs.gender}
-												class="w-full cursor-pointer appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-											>
-												<option value="" disabled selected>Pilih jenis kelamin</option>
-												<option value="LAKILAKI">Laki-Laki</option>
-												<option value="PEREMPUAN">Perempuan</option>
-											</select>
-											<!-- Indikator panah dropdown kecil agar terlihat rapi -->
-											<span
-												class="pointer-events-none absolute top-[42px] right-4 text-xs text-slate-400"
-											>
-												▼
-											</span>
-										</label>
-									</div>
 									<div class="mt-4">
 										<label class="block">
 											<span

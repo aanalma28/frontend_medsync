@@ -59,9 +59,7 @@ export type PatientAppointment = {
 };
 
 export type AppoinmentInputs = {
-	patient_name: string,
-	patient_age: number,
-	gender: string,
+	patient_id: string,
 	complaint: string,
 	detail_sympton: string,
 }
@@ -83,6 +81,21 @@ export function parseBackendError(err: any): string {
 	}
 
 	return formatted || 'Terjadi kesalahan pada server';
+}
+
+function extractList<T>(response: unknown, keys: string[]): T[] {
+	if (!response || typeof response !== 'object') return [];
+	const payload = response as Record<string, unknown>;
+	const data = payload.data;
+	if (Array.isArray(response)) return response;
+	if (Array.isArray(data)) return data as T[];
+	for (const key of keys) {
+		if (data && typeof data === 'object' && Array.isArray((data as Record<string, unknown>)[key])) {
+			return (data as Record<string, unknown>)[key] as T[];
+		}
+		if (Array.isArray(payload[key])) return payload[key] as T[];
+	}
+	return [];
 }
 
 let schedules = $state<DoctorSchedule[]>([]);
@@ -121,9 +134,10 @@ export async function fetchSchedules(params?: {
 			`/patient/dashboard/schedules${queryString}`
 		);
 
-		if (response && Array.isArray(response.data)) {
-			schedules = response.data;
-			schedulesMeta = response.meta || null;
+		const scheduleItems = extractList<DoctorSchedule>(response, ['schedules', 'items', 'results']);
+		if (scheduleItems.length > 0 || response) {
+			schedules = scheduleItems;
+			schedulesMeta = response?.meta || null;
 		} else {
 			schedules = [];
 		}
@@ -156,9 +170,12 @@ export async function fetchAppointments(params?: {
 			`/patient/dashboard/appointments${queryString}`
 		);
 
-		if (response && Array.isArray(response.data)) {
-			appointments = response.data;
-			appointmentsMeta = response.meta || null;
+		console.log(response.data)
+
+		const appointmentItems = extractList<PatientAppointment>(response, ['appointments', 'items', 'results']);
+		if (appointmentItems.length > 0 || response) {
+			appointments = appointmentItems;
+			appointmentsMeta = response?.meta || null;
 		} else {
 			appointments = [];
 		}
@@ -182,9 +199,7 @@ export async function createAppointment(slotPracticeId: string, appoinmentInputs
 			'/patient/dashboard/appointments',
 			{
 				slot_practice_id: slotPracticeId,
-				patient_name: appoinmentInputs.patient_name,
-				patient_age: appoinmentInputs.patient_age,
-				gender: appoinmentInputs.gender,
+				patient_id: appoinmentInputs.patient_id,
 				complaint: appoinmentInputs.complaint,
 				detail_sympton: appoinmentInputs.detail_sympton,
 			}
