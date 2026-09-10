@@ -23,6 +23,14 @@
 		fetchPrescriptions,
 		type PatientPrescription
 	} from '$lib/stores/patientPrescription.svelte';
+	import {
+		patientFamilyStore,
+		fetchFamilyMembers,
+		createFamilyMember,
+		updateFamilyMember,
+		deleteFamilyMember,
+		type PatientFamilyMember
+	} from '$lib/stores/patientFamily.svelte';
 
 	let isLoading = $state(true);
 	let isForbidden = $state(false);
@@ -69,6 +77,11 @@
 	let bookingSuccessData = $state<any | null>(null);
 	let showSuccessModal = $state(false);
 	let isCancellingId = $state<string | null>(null);
+	let selectedFamilyMemberId = $state('');
+	let showFamilyForm = $state(false);
+	let editingFamilyMemberId = $state<string | null>(null);
+	let familyFormError = $state<string | null>(null);
+	let familyForm = $state({ name: '', gender: '', age: 0, medicine_allergy: '' });
 	let appoinmentInputs = $state({
 		patient_name: '',
 		gender: '',
@@ -76,6 +89,57 @@
 		complaint: '',
 		detail_sympton: ''
 	});
+
+	function resetFamilyForm() {
+		familyForm = { name: '', gender: '', age: 0, medicine_allergy: '' };
+		editingFamilyMemberId = null;
+		familyFormError = null;
+	}
+
+	function selectFamilyMember(member: PatientFamilyMember) {
+		selectedFamilyMemberId = member.id;
+		appoinmentInputs.patient_name = member.name;
+		appoinmentInputs.gender = member.gender;
+		appoinmentInputs.patient_age = member.age;
+	}
+
+	function editFamilyMember(member: PatientFamilyMember) {
+		editingFamilyMemberId = member.id;
+		familyForm = { name: member.name, gender: member.gender, age: member.age, medicine_allergy: member.medicine_allergy };
+		familyFormError = null;
+		showFamilyForm = true;
+	}
+
+	async function saveFamilyMember(e: Event) {
+		e.preventDefault();
+		familyFormError = null;
+		if (familyForm.name.trim().length < 3 || !familyForm.gender || familyForm.age < 0) {
+			familyFormError = 'Nama, gender, dan umur wajib diisi dengan benar.';
+			return;
+		}
+		try {
+			const payload = { ...familyForm, name: familyForm.name.trim() };
+			if (editingFamilyMemberId) await updateFamilyMember(editingFamilyMemberId, payload);
+			else await createFamilyMember(payload);
+			showFamilyForm = false;
+			resetFamilyForm();
+		} catch (err: any) {
+			familyFormError = err.message || 'Gagal menyimpan data keluarga.';
+		}
+	}
+
+	async function removeFamilyMember(member: PatientFamilyMember) {
+		if (!confirm(`Hapus data ${member.name} dari keluarga?`)) return;
+		try {
+			await deleteFamilyMember(member.id);
+			if (selectedFamilyMemberId === member.id) {
+				selectedFamilyMemberId = '';
+				appoinmentInputs = { patient_name: '', gender: '', patient_age: 0, complaint: appoinmentInputs.complaint, detail_sympton: appoinmentInputs.detail_sympton };
+			}
+		} catch (err: any) {
+			alert(err.message || 'Gagal menghapus data keluarga.');
+		}
+	}
 
 	// Validasi input
 	let isNameValid = $derived(
@@ -99,7 +163,8 @@
 					departmentStore.fetchDepartments({ is_active: 'true' }),
 					fetchAppointments(),
 					fetchSchedules(),
-					fetchPrescriptions()
+					fetchPrescriptions(),
+					fetchFamilyMembers()
 				]);
 			}
 		} catch (err) {
@@ -161,6 +226,8 @@
 		selectedSlotId = '';
 		selectedSlotInfo = null;
 		bookingError = null;
+		selectedFamilyMemberId = '';
+		appoinmentInputs = { patient_name: '', gender: '', patient_age: 0, complaint: '', detail_sympton: '' };
 		appoinmentInputs.complaint = '';
 		showApptModal = true;
 		fetchSchedules();
@@ -168,7 +235,10 @@
 
 	async function handleBookAppointment(e: Event) {
 		e.preventDefault();
-		if (!selectedSlotId) return;
+		if (!selectedSlotId || !selectedFamilyMemberId) {
+			bookingError = 'Pilih anggota keluarga dari daftar pasien terlebih dahulu.';
+			return;
+		}
 
 		bookingError = null;
 
@@ -373,11 +443,12 @@
 						</div>
 						<div class="rounded-2xl border border-white/20 bg-white/15 px-5 py-3 backdrop-blur-md">
 							<p class="text-[10px] font-bold tracking-widest text-sky-100 uppercase">
-								Nomor Rekam Medis
+								Data Keluarga
 							</p>
 							<p class="mt-0.5 text-xl font-black tracking-wider text-white">
-								{currentUser.user_code || currentUser.id}
+								{patientFamilyStore.members.length} Anggota
 							</p>
+							<p class="mt-0.5 text-[11px] font-medium text-sky-100">Siap untuk pendaftaran janji temu</p>
 						</div>
 					</div>
 				</div>
@@ -588,6 +659,99 @@
 
 					<!-- =========================== -->
 					<!-- MENU 2: JANJI TEMU (PASIEN) -->
+					<!-- =========================== -->
+				{:else if activeMenu === 'keluarga'}
+					<div class="space-y-6">
+						<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+							<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+								<div>
+									<h2 class="text-xl font-bold text-slate-900">Data Keluarga</h2>
+									<p class="mt-1 text-sm text-slate-500">Simpan identitas keluarga untuk mempercepat pendaftaran janji temu.</p>
+								</div>
+								<button
+									type="button"
+									onclick={() => { resetFamilyForm(); showFamilyForm = true; }}
+									class="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-sky-700"
+								>
+									+ Tambah Keluarga
+								</button>
+							</div>
+
+							{#if patientFamilyStore.error && !showFamilyForm}
+								<div class="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{patientFamilyStore.error}</div>
+							{/if}
+							{#if patientFamilyStore.isLoading}
+								<div class="py-12 text-center text-sm text-slate-500">Memuat data keluarga...</div>
+							{:else if patientFamilyStore.members.length === 0}
+								<div class="mt-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-10 text-center">
+									<p class="text-3xl">👨‍👩‍👧</p>
+									<p class="mt-2 font-bold text-slate-700">Belum ada data keluarga</p>
+									<p class="mt-1 text-xs text-slate-400">Tambahkan identitas keluarga agar proses booking lebih cepat.</p>
+								</div>
+							{:else}
+								<div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+									{#each patientFamilyStore.members as member (member.id)}
+										<article class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+											<div class="flex items-start justify-between gap-3">
+												<div>
+													<p class="font-bold text-slate-900">{member.name}</p>
+													<p class="mt-1 text-xs font-semibold text-sky-700">{member.gender} · {member.age} tahun</p>
+												</div>
+												<span class="rounded-lg bg-white px-2 py-1 text-lg">👤</span>
+											</div>
+											<p class="mt-4 min-h-10 text-xs text-slate-500">Alergi obat: {member.medicine_allergy || 'Tidak ada catatan'}</p>
+											<div class="mt-4 flex gap-2 border-t border-slate-200 pt-3">
+												<button type="button" onclick={() => editFamilyMember(member)} class="text-xs font-bold text-sky-600 hover:underline">Edit</button>
+												<button type="button" onclick={() => removeFamilyMember(member)} class="text-xs font-bold text-rose-600 hover:underline">Hapus</button>
+											</div>
+										</article>
+									{/each}
+								</div>
+							{/if}
+						</section>
+					</div>
+
+					{#if showFamilyForm}
+						<div class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+							<form onsubmit={saveFamilyMember} class="w-full max-w-lg space-y-5 rounded-[24px] bg-white p-6 shadow-2xl sm:p-8">
+								<div class="flex items-center justify-between">
+									<div>
+										<h2 class="text-xl font-bold text-slate-900">{editingFamilyMemberId ? 'Edit Data Keluarga' : 'Tambah Data Keluarga'}</h2>
+										<p class="mt-1 text-sm text-slate-500">Data ini tersimpan sebagai identitas pasien di backend.</p>
+									</div>
+									<button type="button" onclick={() => (showFamilyForm = false)} class="text-xl text-slate-400 hover:text-slate-700" aria-label="Tutup">✕</button>
+								</div>
+								{#if familyFormError}
+									<div class="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{familyFormError}</div>
+								{/if}
+								<label class="block text-sm font-semibold text-slate-700">Nama
+									<input bind:value={familyForm.name} required minlength="3" class="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Nama lengkap" />
+								</label>
+								<div class="grid gap-4 sm:grid-cols-2">
+									<label class="block text-sm font-semibold text-slate-700">Gender
+										<select bind:value={familyForm.gender} required class="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+											<option value="" disabled>Pilih gender</option>
+											<option value="LAKILAKI">Laki-laki</option>
+											<option value="PEREMPUAN">Perempuan</option>
+										</select>
+									</label>
+									<label class="block text-sm font-semibold text-slate-700">Umur
+										<input bind:value={familyForm.age} required type="number" min="0" max="150" class="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Umur" />
+									</label>
+								</div>
+								<label class="block text-sm font-semibold text-slate-700">Alergi obat
+									<textarea bind:value={familyForm.medicine_allergy} rows="3" class="mt-1.5 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100" placeholder="Tulis alergi obat atau 'Tidak ada'"></textarea>
+								</label>
+								<div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+									<button type="button" onclick={() => (showFamilyForm = false)} class="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100">Batal</button>
+									<button type="submit" disabled={patientFamilyStore.isSubmitting} class="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50">{patientFamilyStore.isSubmitting ? 'Menyimpan...' : 'Simpan Data'}</button>
+								</div>
+							</form>
+						</div>
+					{/if}
+
+					<!-- =========================== -->
+					<!-- MENU 3: JANJI TEMU (PASIEN) -->
 					<!-- =========================== -->
 				{:else if activeMenu == 'janji'}
 					<div class="space-y-6">
@@ -894,6 +1058,32 @@
 									</div>
 								{/if}
 
+								<!-- Pilih identitas pasien untuk appointment -->
+								<div class="mb-6 rounded-2xl border border-sky-100 bg-sky-50/50 p-5">
+									<div class="mb-3 flex items-center justify-between">
+										<div>
+											<p class="text-sm font-bold text-slate-800">Untuk siapa janji temu ini?</p>
+											<p class="mt-1 text-xs text-slate-500">Pilih pasien keluarga dari data yang tersimpan.</p>
+										</div>
+										<button type="button" onclick={() => { activeMenu = 'keluarga'; showApptModal = false; }} class="text-xs font-bold text-sky-600 hover:underline">Kelola keluarga</button>
+									</div>
+									<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+										{#each patientFamilyStore.members as member (member.id)}
+											<button
+												type="button"
+												onclick={() => selectFamilyMember(member)}
+												class="rounded-xl border-2 p-3 text-left transition {selectedFamilyMemberId === member.id ? 'border-sky-500 bg-white shadow-sm' : 'border-transparent bg-white hover:border-sky-200'}"
+											>
+												<p class="text-sm font-bold text-slate-900">{member.name}</p>
+												<p class="mt-1 text-xs text-slate-500">{member.gender} · {member.age} tahun</p>
+											</button>
+										{/each}
+									</div>
+									{#if patientFamilyStore.members.length === 0}
+										<p class="mt-3 text-xs font-semibold text-amber-700">Belum ada data pasien keluarga. Tambahkan data melalui menu Kelola keluarga.</p>
+									{/if}
+								</div>
+
 								<!-- Schedule List Results -->
 								<div class="space-y-6">
 									{#if patientAppointmentStore.isLoadingSchedules}
@@ -1167,7 +1357,7 @@
 									<button
 										type="button"
 										onclick={handleBookAppointment}
-										disabled={!selectedSlotId || patientAppointmentStore.isSubmitting}
+										disabled={!selectedSlotId || !selectedFamilyMemberId || patientAppointmentStore.isSubmitting}
 										class="rounded-xl bg-gradient-to-r from-sky-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 									>
 										{patientAppointmentStore.isSubmitting

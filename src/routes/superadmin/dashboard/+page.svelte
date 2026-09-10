@@ -486,7 +486,7 @@
 	// =============================================
 	// MANAJEMEN DEPARTEMEN — State & Validation
 	// =============================================
-	let departments = departmentStore.list;
+	let departments = $derived(departmentStore.list);
 
 	let deptSearchInUserModal = $state('');
 
