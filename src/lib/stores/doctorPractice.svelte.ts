@@ -1,4 +1,5 @@
 import { api } from '$lib/api/api';
+import type { DoctorAssessment, NurseAssessment } from '$lib/stores/patientAppointment.svelte';
 
 export type RegisteredPatient = {
 	id: string; // appointment_id
@@ -13,6 +14,8 @@ export type RegisteredPatient = {
 	complaint?: string;
 	detail_sympton?: string;
 	vitalSigns?: string;
+	doctorAssessment?: DoctorAssessment | null;
+	nurseAssessment?: NurseAssessment | null;
 	isUrgent?: boolean;
 };
 
@@ -68,10 +71,13 @@ export type MedicalRecordEntry = {
 	visitDate: string;
 	sessionType: string;
 	complaint: string;
+	detail_sympton?: string;
 	diagnosis: string;
 	prescription: Array<{ name: string; rules_using: string }>;
 	vitalSigns: string;
 	doctorNotes: string;
+	doctorAssessment?: DoctorAssessment | null;
+	nurseAssessment?: NurseAssessment | null;
 	status: 'Selesai' | 'Rawat Jalan' | 'Rujukan' | 'Kontrol Ulang';
 };
 
@@ -194,9 +200,13 @@ export async function fetchSchedules(params?: { date_from?: string; date_to?: st
 						timeSlot: `${slot.start_hour} WIB`,
 						status: mapAppointmentStatus(apt.status),
 						complaint: apt.patient.complaint,
-						detailedSymptoms: apt.patient?.detail_sympton || 'Terdaftar melalui pendaftaran online MedSync.',
+						detail_sympton: apt.patient?.detail_sympton || 'Terdaftar melalui pendaftaran online MedSync.',
+						doctorAssessment: apt.doctor_assesment || null,
+						nurseAssessment: apt.nurse_assesment || null,
 					}))
 				);
+
+				console.log(mappedPatients)
 
 				return {
 					id: practice.id,
@@ -242,6 +252,8 @@ export async function fetchTodayPatients() {
 				status: mapAppointmentStatus(item.status),
 				complaint: item.patient?.complaint || 'Pemeriksaan Kesehatan Poli',
 				detail_sympton: item.patient?.detail_sympton || 'Pasien datang sesuai nomor antrean.',
+				doctorAssessment: item.doctor_assesment || null,
+				nurseAssessment: item.nurse_assesment || null,
 			}));
 		}
 		return todayPatients;
@@ -267,8 +279,10 @@ export async function fetchPatientHistory(search: string = '') {
 			const patientMap = new Map<string, DoctorExaminedPatient>();
 
 			response.data.forEach((mh: any) => {
-				console.log(mh)
 				const rm = mh.patient?.medical_record_number || 'RM-000';
+				const appointment = mh.appointment || {};
+				const doctorAssessment = mh.doctor_assesment || appointment.doctor_assesment || null;
+				const nurseAssessment = mh.nurse_assesment || appointment.nurse_assesment || null;
 				const dateDisplay = mh.createdAt
 					? new Date(mh.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 					: 'Hari Ini';
@@ -277,15 +291,20 @@ export async function fetchPatientHistory(search: string = '') {
 					id: mh.id,
 					visitDate: `${dateDisplay} (${mh.appointment?.slot_name || 'Sesi Praktik'})`,
 					sessionType: 'Konsultasi & Pemeriksaan Dokter',
-					complaint: mh.complaint || 'Keluhan Pasien',
-					diagnosis: mh.diagnosis || 'Diagnosis Dokter',
+					complaint: mh.complaint || appointment.complaint || 'Keluhan Pasien',
+					detail_sympton: mh.detail_sympton || appointment.detail_sympton || '',
+					diagnosis: doctorAssessment?.assesment || mh.diagnosis || 'Diagnosis Dokter',
 					patient_name: mh.patient_name,
 					patient_age: mh.patient_age,
 					gender: mh.gender,
 					prescription: mh.recipe?.detailRecipe || [],
-					vitalSigns: 'TD: 120/80 mmHg | Suhu: 36.8°C',
-					doctorNotes: mh.notes || 'Catatan pemeriksaan dokter.',
-					status: mh.appointment?.status === 'COMPLETED' ? 'Selesai' : 'Rawat Jalan'
+					vitalSigns: nurseAssessment
+						? `TD: ${nurseAssessment.sistolic ?? '-'}/${nurseAssessment.diastolic ?? '-'} mmHg | Nadi: ${nurseAssessment.heart_rate ?? '-'} bpm | Suhu: ${nurseAssessment.temperature ?? '-'}°C`
+						: 'Data tanda vital belum tersedia.',
+					doctorNotes: doctorAssessment?.notes || doctorAssessment?.plan || mh.notes || 'Catatan pemeriksaan dokter.',
+					doctorAssessment,
+					nurseAssessment,
+					status: appointment.status === 'COMPLETED' ? 'Selesai' : 'Rawat Jalan'
 				};
 
 				if (patientMap.has(rm)) {

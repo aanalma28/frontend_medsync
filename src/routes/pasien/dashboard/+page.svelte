@@ -57,6 +57,7 @@
 
 	// --- STATE JANJI TEMU REAL API ---
 	let selectedStatusFilter = $state<string>('ALL');
+	let expandedAppointmentId = $state<string | null>(null);
 
 	// Modal Buat Janji State
 	let showApptModal = $state(false);
@@ -544,7 +545,7 @@
 								</div>
 							{:else}
 								<div class="space-y-4">
-									{#each patientAppointmentStore.appointments.slice(0, 3) as appt (appt.id)}
+									{#each patientAppointmentStore.appointments.slice(0, 3) as appt, appointmentIndex (appt.id ?? `upcoming-${appointmentIndex}`)}
 										<div
 											class={`rounded-xl border p-4 ${appt.status === 'CONFIRMED' || appt.status === 'PENDING' ? 'border-sky-500 bg-sky-50/50 shadow-sm' : 'border-slate-100 bg-slate-50'}`}
 										>
@@ -605,8 +606,8 @@
 											Tidak ada pengobatan resep aktif.
 										</div>
 									{:else}
-										{#each patientPrescriptionStore.activePrescriptions as rx (rx.id)}
-											{#each rx.medicines as med (med.id)}
+										{#each patientPrescriptionStore.activePrescriptions as rx, prescriptionIndex (rx.id ?? `prescription-${prescriptionIndex}`)}
+											{#each rx.medicines as med, medicineIndex (`${rx.id ?? `prescription-${prescriptionIndex}`}-${med.id ?? med.name ?? medicineIndex}`)}
 												<div
 													class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3"
 												>
@@ -847,7 +848,7 @@
 							</div>
 						{:else}
 							<div class="grid gap-5 md:grid-cols-2">
-								{#each patientAppointmentStore.appointments as item (item.id)}
+								{#each patientAppointmentStore.appointments as item, appointmentIndex (item.id ?? `appointment-${appointmentIndex}`)}
 									<div
 										class="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm transition hover:border-sky-300"
 									>
@@ -903,6 +904,15 @@
 										>
 											<span class="text-xs font-bold text-slate-400">ID: {item.id}</span>
 											<div class="flex gap-2">
+													{#if item.status === 'COMPLETED'}
+														<button
+															type="button"
+															onclick={() => (expandedAppointmentId = expandedAppointmentId === item.id ? null : item.id)}
+															class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100"
+														>
+															{expandedAppointmentId === item.id ? 'Tutup Hasil Pemeriksaan' : 'Lihat Hasil Pemeriksaan'}
+														</button>
+													{/if}
 												{#if item.status === 'PENDING' || item.status === 'CONFIRMED'}
 													<button
 														disabled={isCancellingId === item.id}
@@ -914,6 +924,28 @@
 												{/if}
 											</div>
 										</div>
+
+											{#if item.status === 'COMPLETED' && expandedAppointmentId === item.id}
+												<div class="mt-4 space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 text-xs">
+													<div class="grid gap-3 sm:grid-cols-2">
+														<div class="rounded-xl border border-amber-100 bg-amber-50 p-3">
+															<p class="font-bold text-amber-900">Subjective / Keluhan</p>
+															<p class="mt-1 leading-relaxed text-slate-700">{item.complaint || 'Tidak ada keluhan tercatat.'}</p>
+														</div>
+														<div class="rounded-xl border border-sky-100 bg-sky-50 p-3">
+															<p class="font-bold text-sky-900">Objective / Tanda Vital</p>
+															<p class="mt-1 leading-relaxed text-slate-700">
+																TD {item.nurse_assesment?.sistolic ?? '-'} / {item.nurse_assesment?.diastolic ?? '-'} mmHg, Nadi {item.nurse_assesment?.heart_rate ?? '-'} bpm, RR {item.nurse_assesment?.respiratory_rate ?? '-'}x/menit, Suhu {item.nurse_assesment?.temperature ?? '-'}°C, BB {item.nurse_assesment?.weight ?? '-'} kg, TB {item.nurse_assesment?.height ?? '-'} cm
+															</p>
+														</div>
+													</div>
+													<div class="grid gap-3 sm:grid-cols-3">
+														<div class="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p class="font-bold text-indigo-900">Assessment</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.assesment || 'Belum diisi.'}</p></div>
+														<div class="rounded-xl border border-emerald-100 bg-white p-3"><p class="font-bold text-emerald-900">Plan</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.plan || 'Belum diisi.'}</p></div>
+														<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="font-bold text-slate-800">Catatan Dokter</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.notes || 'Belum diisi.'}</p></div>
+													</div>
+												</div>
+											{/if}
 									</div>
 								{/each}
 							</div>
@@ -1408,7 +1440,7 @@
 							<section class="space-y-4">
 								<h3 class="text-lg font-bold text-slate-800">Status Resep Saat Ini</h3>
 
-								{#each patientPrescriptionStore.activePrescriptions as rx (rx.id)}
+										{#each patientPrescriptionStore.activePrescriptions as rx, prescriptionIndex (rx.id ?? `prescription-${prescriptionIndex}`)}
 									<div
 										class={`overflow-hidden rounded-[24px] border transition-all ${rx.status === 'CONFIRMED' || rx.is_ready ? 'border-emerald-300 bg-emerald-50/40 shadow-md' : 'border-sky-200 bg-white shadow-sm'}`}
 									>
@@ -1464,7 +1496,7 @@
 													Daftar Obat & Aturan Pakai
 												</p>
 												<div class="grid gap-3 sm:grid-cols-2">
-													{#each rx.medicines as med (med.id)}
+													{#each rx.medicines as med, medicineIndex (`${rx.id ?? `prescription-${prescriptionIndex}`}-${med.id ?? med.name ?? medicineIndex}`)}
 														<div
 															class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm"
 														>
@@ -1502,7 +1534,7 @@
 									</div>
 								{:else}
 									<div class="space-y-4">
-										{#each patientPrescriptionStore.historyPrescriptions as history (history.id)}
+											{#each patientPrescriptionStore.historyPrescriptions as history, historyIndex (history.id ?? `history-${historyIndex}`)}
 											<div
 												class="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between"
 											>

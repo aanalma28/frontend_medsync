@@ -240,13 +240,19 @@
 				histories: [
 					{
 						id: 'REC-CURRENT',
+						patient_name: activePatient?.patientName || 'Pasien MedSync',
+						patient_age: activePatient?.age || 30,
+						gender: activePatient?.gender || 'Perempuan',
 						visitDate: `${todayDateDisplay} (${activePatient?.timeSlot || 'Sesi Praktik'})`,
 						sessionType: 'Pemeriksaan Rutin Dokter Spesialis',
-						complaint: activePatient ? activePatient.complaint : 'Pemeriksaan Kesehatan',
+										complaint: activePatient?.complaint || 'Pemeriksaan Kesehatan',
 						diagnosis: diagnosis,
 						prescription: selectedMedicines.length
-							? selectedMedicines
-							: [{ name: 'Paracetamol 500mg', usage: '3x1 Tablet' }],
+											? selectedMedicines.map((medicine) => ({
+													name: medicine.name,
+												rules_using: medicine.usage
+												}))
+											: [{ name: 'Paracetamol 500mg', rules_using: '3x1 Tablet' }],
 						vitalSigns: activePatient?.vitalSigns || 'TD: 120/80 mmHg | Suhu: 36.8°C',
 						doctorNotes: 'Pasien telah diperiksa secara menyeluruh. Disarankan istirahat cukup.',
 						status: 'Rawat Jalan'
@@ -1763,6 +1769,7 @@
 										</span>
 									</div>
 
+									{#if record.status === 'Selesai'}
 									<div class="grid gap-3 sm:grid-cols-2">
 										<div
 											class="space-y-1 rounded-xl border border-amber-100 bg-amber-50/50 p-3 text-xs"
@@ -1778,6 +1785,31 @@
 											<p class="font-black text-indigo-900">{record.diagnosis}</p>
 										</div>
 									</div>
+
+										<div class="grid gap-3 sm:grid-cols-2">
+											<div class="rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-xs">
+												<p class="font-bold text-sky-900">SOAP Pemeriksaan</p>
+												<div class="mt-2 space-y-1.5 text-slate-700">
+													<p><strong>Subjective:</strong> {record.complaint || 'Belum diisi.'}</p>
+													<p><strong>Objective:</strong> {record.doctorAssessment?.objective || 'Belum diisi.'}</p>
+													<p><strong>Assessment:</strong> {record.doctorAssessment?.assesment || record.diagnosis}</p>
+													<p><strong>Plan:</strong> {record.doctorAssessment?.plan || 'Belum diisi.'}</p>
+													<p><strong>Catatan:</strong> {record.doctorAssessment?.notes || record.doctorNotes}</p>
+												</div>
+											</div>
+											<div class="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs">
+												<p class="font-bold text-emerald-900">Tanda Vital Perawat</p>
+												<div class="mt-2 grid grid-cols-2 gap-1.5 text-slate-700">
+													<p>TD: {record.nurseAssessment?.sistolic ?? '-'} / {record.nurseAssessment?.diastolic ?? '-'} mmHg</p>
+													<p>Nadi: {record.nurseAssessment?.heart_rate ?? '-'} bpm</p>
+													<p>RR: {record.nurseAssessment?.respiratory_rate ?? '-'}x/menit</p>
+													<p>Suhu: {record.nurseAssessment?.temperature ?? '-'}°C</p>
+													<p>BB: {record.nurseAssessment?.weight ?? '-'} kg</p>
+													<p>TB: {record.nurseAssessment?.height ?? '-'} cm</p>
+												</div>
+											</div>
+										</div>
+										{/if}
 
 									{#if record.prescription && record.prescription.length}
 										<div class="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">

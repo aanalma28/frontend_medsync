@@ -32,12 +32,45 @@ export type DoctorSchedule = {
 	slots: ScheduleSlot[];
 };
 
+export type DoctorAssessment = {
+	objective?: string | null;
+	assesment?: string | null;
+	plan?: string | null;
+	notes?: string | null;
+};
+
+export type NurseAssessment = {
+	sistolic?: number | null;
+	diastolic?: number | null;
+	heart_rate?: number | null;
+	respiratory_rate?: number | null;
+	temperature?: number | null;
+	weight?: number | null;
+	height?: number | null;
+};
+
 export type PatientAppointment = {
 	id: string;
 	queue_number: number;
 	status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
 	createdAt: string;
 	updatedAt?: string;
+	complaint?: string | null;
+	detail_sympton?: string | null;
+	doctor_assesment?: DoctorAssessment | null;
+	nurse_assesment?: NurseAssessment | null;
+	appointment?: {
+		id: string;
+		queue_number: number;
+		status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+		createdAt: string;
+		updatedAt?: string;
+		complaint?: string | null;
+		detail_sympton?: string | null;
+		doctor_assesment?: DoctorAssessment | null;
+		nurse_assesment?: NurseAssessment | null;
+
+	};
 	slot?: {
 		id: string;
 		name: string;
@@ -53,6 +86,7 @@ export type PatientAppointment = {
 			id: string;
 			name: string;
 			departmen_code?: string;
+			address?: string;
 			city?: string;
 		};
 	};
@@ -174,7 +208,9 @@ export async function fetchAppointments(params?: {
 
 		const appointmentItems = extractList<PatientAppointment>(response, ['appointments', 'items', 'results']);
 		if (appointmentItems.length > 0 || response) {
-			appointments = appointmentItems;
+			appointments = appointmentItems.map((item) =>
+				item.appointment ? { ...item, ...item.appointment } : item
+			);
 			appointmentsMeta = response?.meta || null;
 		} else {
 			appointments = [];
