@@ -327,6 +327,48 @@
 		}
 	}
 
+	type MedicalHistoryGroup = {
+		patient: NonNullable<PatientAppointment['patient']>;
+		appointments: PatientAppointment[];
+	};
+
+	let medicalHistoryGroups = $derived.by<MedicalHistoryGroup[]>(() => {
+		const groups = new Map<string, MedicalHistoryGroup>();
+
+		for (const appointment of patientAppointmentStore.appointments) {
+			const patient = appointment.patient;
+			const patientCode = patient?.patient_code;
+			if (!patient || !patientCode) continue;
+
+			const existingGroup = groups.get(patientCode);
+			if (existingGroup) existingGroup.appointments.push(appointment);
+			else groups.set(patientCode, { patient, appointments: [appointment] });
+		}
+
+		return Array.from(groups.values()).sort((first, second) =>
+			first.patient.name.localeCompare(second.patient.name)
+		);
+	});
+
+	let selectedMedicalHistory = $state<MedicalHistoryGroup | null>(null);
+
+	function getMedicalHistoryDate(appointment: PatientAppointment): number {
+		return new Date(appointment.practice_date || appointment.appointment?.createdAt || 0).getTime();
+	}
+
+	function openMedicalHistoryDetails(history: MedicalHistoryGroup) {
+		selectedMedicalHistory = {
+			...history,
+			appointments: [...history.appointments].sort(
+				(first, second) => getMedicalHistoryDate(second) - getMedicalHistoryDate(first)
+			)
+		};
+	}
+
+	function closeMedicalHistoryDetails() {
+		selectedMedicalHistory = null;
+	}
+
 	// --- STATE MENU PENGATURAN (PASIEN) ---
 	let userProfile = $state({
 		name: currentUser.name,
@@ -627,12 +669,26 @@
 											</p>
 											<p class="text-[10px] text-slate-400">{formatDate(update.practice_date)}</p>
 										</div>
-										<p class="text-sm leading-relaxed text-slate-200">
-											Plan: {update.appointment?.doctor_assesment?.plan || 'Belum ada plan dokter.'}
-										</p>
-										<p class="text-xs font-bold italic leading-relaxed text-slate-200">
-											Catatan: {update.appointment?.doctor_assesment?.notes || 'Belum ada catatan dokter.'}
-										</p>
+										<table class="mt-3 w-full table-fixed border-collapse text-left text-xs text-slate-200">
+											<colgroup>
+												<col class="w-1/4" />
+												<col class="w-3/4" />
+											</colgroup>
+											<tbody>
+												<tr class="border-b border-white/10 align-top">
+													<th class="py-2 pr-3 font-bold text-sky-300">Plan</th>
+													<td class="py-2 leading-relaxed">
+														{update.appointment?.doctor_assesment?.plan || 'Belum ada plan dokter.'}
+													</td>
+												</tr>
+												<tr class="align-top">
+													<th class="py-2 pr-3 font-bold text-sky-300">Catatan</th>
+													<td class="py-2 leading-relaxed italic">
+														{update.appointment?.doctor_assesment?.notes || 'Belum ada catatan dokter.'}
+													</td>
+												</tr>
+											</tbody>
+										</table>
 										<p class="mt-3 text-xs text-slate-400">
 											Pemeriksa: {update.doctor?.name || 'Dokter MedSync'}
 										</p>
@@ -759,7 +815,88 @@
 					{/if}
 
 					<!-- =========================== -->
-					<!-- MENU 3: JANJI TEMU (PASIEN) -->
+					<!-- MENU 3: RIWAYAT MEDIS (PASIEN) -->
+				{:else if activeMenu === 'riwayat-medis'}
+					<div class="space-y-6">
+						<section class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+							<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								<div>
+									<h2 class="text-xl font-bold text-slate-900">Riwayat Medis</h2>
+									<p class="mt-1 text-sm text-slate-500">Riwayat pemeriksaan seluruh anggota keluarga yang terhubung dengan akun Anda.</p>
+								</div>
+								<span class="rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-700">{medicalHistoryGroups.length} Pasien</span>
+							</div>
+						</section>
+
+						{#if patientAppointmentStore.isLoadingAppointments}
+							<div class="flex flex-col items-center justify-center rounded-[24px] bg-white py-16 shadow-sm">
+								<div class="h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600"></div>
+								<p class="mt-3 text-sm text-slate-500">Memuat riwayat medis...</p>
+							</div>
+						{:else if patientAppointmentStore.error}
+							<div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+								<p class="text-sm font-bold text-rose-600">{patientAppointmentStore.error}</p>
+								<button type="button" onclick={() => fetchAppointments()} class="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700">Coba Lagi</button>
+							</div>
+						{:else if medicalHistoryGroups.length === 0}
+							<div class="rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-12 text-center">
+								<p class="text-3xl">📋</p>
+								<p class="mt-2 font-bold text-slate-700">Belum ada riwayat medis</p>
+								<p class="mt-1 text-xs text-slate-400">Riwayat akan muncul setelah anggota keluarga memiliki janji temu.</p>
+							</div>
+						{:else}
+							<div class="grid gap-6 xl:grid-cols-2">
+								{#each medicalHistoryGroups as history (history.patient.patient_code)}
+									<article class="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+										<div class="border-b border-slate-200 bg-slate-50 p-6">
+											<div class="flex items-start justify-between gap-4">
+												<div>
+													<p class="text-xs font-black tracking-wider text-sky-600 uppercase">Kode Pasien: {history.patient.patient_code}</p>
+													<h3 class="mt-1 text-xl font-black text-slate-900">{history.patient.name}</h3>
+													<p class="mt-1 text-sm font-medium text-slate-500">{history.patient.gender || '-'} &bull; {history.patient.age} tahun</p>
+												</div>
+												<span class="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-600 shadow-sm">{history.appointments.length} Kunjungan</span>
+											</div>
+													<button
+														type="button"
+														onclick={() => openMedicalHistoryDetails(history)}
+														class="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-sky-700"
+													>
+														Lihat Detail Riwayat
+													</button>
+										</div>
+
+										<div class="space-y-3 p-6">
+											{#each history.appointments as appointment, appointmentIndex (appointment.appointment?.id ?? `history-${history.patient.patient_code}-${appointmentIndex}`)}
+												<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+													<div class="flex flex-wrap items-start justify-between gap-2">
+														<div>
+															<p class="font-bold text-slate-900">{appointment.doctor?.name || 'Dokter MedSync'}</p>
+															<p class="mt-1 text-xs font-medium text-slate-500">{formatDate(appointment.practice_date)} &bull; {appointment.doctor?.department?.name || 'Poliklinik'}</p>
+														</div>
+														<span class="rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase {getStatusBadgeClass(appointment.appointment?.status || 'PENDING')}">{getStatusLabel(appointment.appointment?.status || 'PENDING')}</span>
+													</div>
+													<div class="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+														<p><span class="font-bold text-slate-700">Keluhan:</span> {appointment.appointment?.complaint || 'Tidak ada catatan.'}</p>
+														<p><span class="font-bold text-slate-700">Antrean:</span> #{appointment.appointment?.queue_number ?? '-'}</p>
+													</div>
+													{#if appointment.appointment?.doctor_assesment}
+														<div class="mt-3 grid gap-2 border-t border-slate-200 pt-3 text-xs sm:grid-cols-2">
+															<p><span class="font-bold text-indigo-800">Assessment:</span> {appointment.appointment.doctor_assesment.assesment || 'Belum diisi.'}</p>
+															<p><span class="font-bold text-emerald-800">Catatan:</span> {appointment.appointment.doctor_assesment.notes || 'Belum diisi.'}</p>
+														</div>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									</article>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- =========================== -->
+					<!-- MENU 4: JANJI TEMU (PASIEN) -->
 					<!-- =========================== -->
 				{:else if activeMenu == 'janji'}
 					<div class="space-y-6">
@@ -1760,3 +1897,94 @@
 		</div>
 	</main>
 </div>
+
+{#if selectedMedicalHistory}
+	<div class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+		<div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl">
+			<div class="flex items-start justify-between border-b border-slate-200 bg-slate-900 px-6 py-5 text-white sm:px-8">
+				<div>
+					<p class="text-xs font-black tracking-wider text-sky-300 uppercase">Riwayat Medis Pasien</p>
+					<h2 class="mt-1 text-2xl font-black">{selectedMedicalHistory.patient.name}</h2>
+					<p class="mt-1 text-xs text-slate-300">
+						Kode: {selectedMedicalHistory.patient.patient_code} &bull;
+						{selectedMedicalHistory.patient.gender || '-'} &bull;
+						{selectedMedicalHistory.patient.age} tahun
+					</p>
+				</div>
+				<button
+					type="button"
+					onclick={closeMedicalHistoryDetails}
+					class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg text-white transition hover:bg-white/20"
+					aria-label="Tutup detail riwayat medis"
+				>
+					&times;
+				</button>
+			</div>
+
+			<div class="flex-1 space-y-4 overflow-y-auto bg-slate-50 p-5 sm:p-8">
+				<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">
+					Terbaru ke terlama &bull; {selectedMedicalHistory.appointments.length} kunjungan
+				</p>
+				{#each selectedMedicalHistory.appointments as appointment, appointmentIndex (appointment.appointment?.id ?? `modal-history-${appointmentIndex}`)}
+					<article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+						<div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+							<div>
+								<p class="text-lg font-black text-slate-900">{appointment.doctor?.name || 'Dokter MedSync'}</p>
+								<p class="mt-1 text-xs font-medium text-slate-500">
+									{formatDate(appointment.practice_date)} &bull;
+									{appointment.doctor?.department?.name || 'Poliklinik'} &bull;
+									Antrean #{appointment.appointment?.queue_number ?? '-'}
+								</p>
+							</div>
+							<span class="rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase {getStatusBadgeClass(appointment.appointment?.status || 'PENDING')}">
+								{getStatusLabel(appointment.appointment?.status || 'PENDING')}
+							</span>
+						</div>
+
+						<div class="mt-4 grid gap-3 sm:grid-cols-2">
+							<div class="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs">
+								<p class="font-bold text-amber-900">Keluhan</p>
+								<p class="mt-1 leading-relaxed text-slate-700">{appointment.appointment?.complaint || 'Tidak ada catatan.'}</p>
+							</div>
+							<div class="rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs">
+								<p class="font-bold text-sky-900">Detail Gejala</p>
+								<p class="mt-1 leading-relaxed text-slate-700">{appointment.appointment?.detail_sympton || 'Tidak ada catatan.'}</p>
+							</div>
+						</div>
+
+						<div class="mt-3 grid gap-3 sm:grid-cols-2">
+							<div class="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs">
+								<p class="font-bold text-indigo-900">Assessment Dokter</p>
+								<p class="mt-1 text-slate-700">{appointment.appointment?.doctor_assesment?.assesment || 'Belum diisi.'}</p>
+								<p class="mt-3 font-bold text-indigo-900">Plan</p>
+								<p class="mt-1 text-slate-700">{appointment.appointment?.doctor_assesment?.plan || 'Belum diisi.'}</p>
+							</div>
+							<div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs">
+								<p class="font-bold text-emerald-900">Catatan Dokter</p>
+								<p class="mt-1 text-slate-700">{appointment.appointment?.doctor_assesment?.notes || 'Belum diisi.'}</p>
+								<p class="mt-3 font-bold text-emerald-900">Tanda Vital</p>
+								<p class="mt-1 leading-relaxed text-slate-700">
+									TD {appointment.appointment?.nurse_assesment?.sistolic ?? '-'} / {appointment.appointment?.nurse_assesment?.diastolic ?? '-'} mmHg, Nadi {appointment.appointment?.nurse_assesment?.heart_rate ?? '-'} bpm, RR {appointment.appointment?.nurse_assesment?.respiratory_rate ?? '-'}x/menit, Suhu {appointment.appointment?.nurse_assesment?.temperature ?? '-'}°C, BB {appointment.appointment?.nurse_assesment?.weight ?? '-'} kg, TB {appointment.appointment?.nurse_assesment?.height ?? '-'} cm
+								</p>
+							</div>
+						</div>
+					</article>
+				{:else}
+					<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+						Belum ada riwayat pemeriksaan.
+					</div>
+				{/each}
+			</div>
+
+			<div class="flex justify-end border-t border-slate-200 bg-white px-6 py-4 sm:px-8">
+				<button
+					type="button"
+					onclick={closeMedicalHistoryDetails}
+					class="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-sky-700"
+				>
+					Tutup Detail
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

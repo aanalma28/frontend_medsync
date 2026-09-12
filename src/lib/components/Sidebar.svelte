@@ -18,6 +18,7 @@
 			{ id: 'beranda', label: 'Beranda', iconName: 'beranda' },
 			{ id: 'janji', label: 'Janji Temu', iconName: 'janji' },
 			{ id: 'keluarga', label: 'Data Keluarga', iconName: 'users' },
+			{ id: 'riwayat-medis', label: 'Riwayat Medis', iconName: 'database' },
 			{ id: 'resep', label: 'Resep Obat', iconName: 'resep' },
 			{ id: 'pengaturan', label: 'Pengaturan', iconName: 'pengaturan' }
 		],
