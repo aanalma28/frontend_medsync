@@ -314,11 +314,11 @@ export async function fetchPatientHistory(search: string = '') {
 				} else {
 					patientMap.set(rm, {
 						patientId: rm,
-						name: mh.patient?.name || 'Pasien',
-						age: calculateAge(mh.patient?.birth_date),
-						gender: 'Perempuan',
+						name: mh.patient_name || 'Pasien',
+						age: mh.patient_age,
+						gender: mh.gender === 'PEREMPUAN' ? 'Perempuan' : 'Laki-laki',
 						phone: mh.patient?.phone || '0812-0000-0000',
-						address: 'Alamat Pasien RS MedSync',
+						address: mh.patient?.address || 'Alamat belum tersedia',
 						totalVisits: 1,
 						lastVisitDate: dateDisplay,
 						primaryDiagnosis: mh.diagnosis || 'Diagnosa Medis',
