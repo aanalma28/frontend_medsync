@@ -49,16 +49,7 @@ export type NurseAssessment = {
 	height?: number | null;
 };
 
-export type PatientAppointment = {
-	id: string;
-	queue_number: number;
-	status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
-	createdAt: string;
-	updatedAt?: string;
-	complaint?: string | null;
-	detail_sympton?: string | null;
-	doctor_assesment?: DoctorAssessment | null;
-	nurse_assesment?: NurseAssessment | null;
+export type PatientAppointment = {			
 	appointment?: {
 		id: string;
 		queue_number: number;
@@ -90,6 +81,12 @@ export type PatientAppointment = {
 			city?: string;
 		};
 	};
+	patient?: {
+		patient_code: string;
+		name: string;
+		gender?: string;
+		age: number;
+	}
 };
 
 export type AppoinmentInputs = {

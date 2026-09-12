@@ -45,16 +45,6 @@
 	let activeMenu = $state('beranda');
 	let isSidebarOpen = $state(false);
 
-	let careUpdates = $state([
-		{
-			id: 1,
-			date: '28 Jul 2026',
-			title: 'Hasil Cek Darah Keluar',
-			desc: 'Semua indikator normal. Jaga pola makan.',
-			doctor: 'dr. Nanda'
-		}
-	]);
-
 	// --- STATE JANJI TEMU REAL API ---
 	let selectedStatusFilter = $state<string>('ALL');
 	let expandedAppointmentId = $state<string | null>(null);
@@ -629,14 +619,46 @@
 
 							<div class="rounded-[24px] bg-slate-900 p-6 text-white shadow-lg">
 								<h2 class="mb-4 text-lg font-bold">Catatan Dokter (Terbaru)</h2>
-								{#each careUpdates as update (update.id)}
+								{#each patientAppointmentStore.appointments.filter((appointment) => appointment.appointment?.doctor_assesment) as update, updateIndex (update.appointment?.id ?? `doctor-note-${updateIndex}`)}
 									<div class="rounded-xl border border-white/10 bg-white/10 p-4">
 										<div class="mb-2 flex items-center justify-between">
-											<p class="font-bold text-sky-300">{update.title}</p>
-											<p class="text-[10px] text-slate-400">{update.date}</p>
+											<p class="font-bold text-sky-300">
+												{update.appointment?.doctor_assesment?.assesment || 'Assessment dokter'}
+											</p>
+											<p class="text-[10px] text-slate-400">{formatDate(update.practice_date)}</p>
 										</div>
-										<p class="text-sm leading-relaxed text-slate-200">{update.desc}</p>
-										<p class="mt-3 text-xs text-slate-400">Pemeriksa: {update.doctor}</p>
+										<p class="text-sm leading-relaxed text-slate-200">
+											Plan: {update.appointment?.doctor_assesment?.plan || 'Belum ada plan dokter.'}
+										</p>
+										<p class="text-xs font-bold italic leading-relaxed text-slate-200">
+											Catatan: {update.appointment?.doctor_assesment?.notes || 'Belum ada catatan dokter.'}
+										</p>
+										<p class="mt-3 text-xs text-slate-400">
+											Pemeriksa: {update.doctor?.name || 'Dokter MedSync'}
+										</p>
+										<div class="my-3 border-t border-white/15"></div>
+										<div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+											<div>
+												<span class="text-slate-500">Kode pasien</span>
+												<p class="font-semibold text-white">{update.patient?.patient_code || '-'}</p>
+											</div>
+											<div>
+												<span class="text-slate-500">Nama</span>
+												<p class="font-semibold text-white">{update.patient?.name || '-'}</p>
+											</div>
+											<div>
+												<span class="text-slate-500">Umur</span>
+												<p class="font-semibold text-white">{update.patient?.age ?? '-'} tahun</p>
+											</div>
+											<div>
+												<span class="text-slate-500">Gender</span>
+												<p class="font-semibold text-white">{update.patient?.gender || '-'}</p>
+											</div>
+										</div>
+									</div>
+								{:else}
+									<div class="rounded-xl border border-white/10 bg-white/10 p-4 text-sm text-slate-400">
+										Belum ada catatan dokter.
 									</div>
 								{/each}
 							</div>
@@ -902,47 +924,47 @@
 										<div
 											class="mt-6 flex items-center justify-between border-t border-slate-100 pt-4"
 										>
-											<span class="text-xs font-bold text-slate-400">ID: {item.id}</span>
+											<span class="text-xs font-bold text-slate-400">Kode Pasien: {item.patient?.patient_code}</span>
 											<div class="flex gap-2">
-													{#if item.status === 'COMPLETED'}
+													{#if item.appointment?.status === 'COMPLETED'}
 														<button
 															type="button"
-															onclick={() => (expandedAppointmentId = expandedAppointmentId === item.id ? null : item.id)}
+															onclick={() => (expandedAppointmentId = expandedAppointmentId === item.patient?.patient_code ? null : item.patient?.patient_code)}
 															class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100"
 														>
-															{expandedAppointmentId === item.id ? 'Tutup Hasil Pemeriksaan' : 'Lihat Hasil Pemeriksaan'}
+															{expandedAppointmentId === item.patient?.patient_code ? 'Tutup Hasil Pemeriksaan' : 'Lihat Hasil Pemeriksaan'}
 														</button>
 													{/if}
-												{#if item.status === 'PENDING' || item.status === 'CONFIRMED'}
+												{#if item.appointment?.status === 'PENDING' || item.appointment?.status === 'CONFIRMED'}
 													<button
-														disabled={isCancellingId === item.id}
-														onclick={() => handleCancelAppointment(item.id)}
+														disabled={isCancellingId === item.appointment?.id}
+														onclick={() => handleCancelAppointment(item.appointment?.id)}
 														class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
 													>
-														{isCancellingId === item.id ? 'Membatalkan...' : 'Batalkan Janji'}
+														{isCancellingId === item.appointment?.id ? 'Membatalkan...' : 'Batalkan Janji'}
 													</button>
 												{/if}
 											</div>
 										</div>
 
-											{#if item.status === 'COMPLETED' && expandedAppointmentId === item.id}
+											{#if item.appointment?.status === 'COMPLETED' && expandedAppointmentId === item.patient?.patient_code}
 												<div class="mt-4 space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 text-xs">
 													<div class="grid gap-3 sm:grid-cols-2">
 														<div class="rounded-xl border border-amber-100 bg-amber-50 p-3">
 															<p class="font-bold text-amber-900">Subjective / Keluhan</p>
-															<p class="mt-1 leading-relaxed text-slate-700">{item.complaint || 'Tidak ada keluhan tercatat.'}</p>
+															<p class="mt-1 leading-relaxed text-slate-700">{item.appointment?.complaint || 'Tidak ada keluhan tercatat.'}</p>
 														</div>
 														<div class="rounded-xl border border-sky-100 bg-sky-50 p-3">
 															<p class="font-bold text-sky-900">Objective / Tanda Vital</p>
 															<p class="mt-1 leading-relaxed text-slate-700">
-																TD {item.nurse_assesment?.sistolic ?? '-'} / {item.nurse_assesment?.diastolic ?? '-'} mmHg, Nadi {item.nurse_assesment?.heart_rate ?? '-'} bpm, RR {item.nurse_assesment?.respiratory_rate ?? '-'}x/menit, Suhu {item.nurse_assesment?.temperature ?? '-'}°C, BB {item.nurse_assesment?.weight ?? '-'} kg, TB {item.nurse_assesment?.height ?? '-'} cm
+																TD {item.appointment?.nurse_assesment?.sistolic ?? '-'} / {item.appointment?.nurse_assesment?.diastolic ?? '-'} mmHg, Nadi {item.appointment?.nurse_assesment?.heart_rate ?? '-'} bpm, RR {item.appointment?.nurse_assesment?.respiratory_rate ?? '-'}x/menit, Suhu {item.appointment?.nurse_assesment?.temperature ?? '-'}°C, BB {item.appointment?.nurse_assesment?.weight ?? '-'} kg, TB {item.appointment?.nurse_assesment?.height ?? '-'} cm
 															</p>
 														</div>
 													</div>
 													<div class="grid gap-3 sm:grid-cols-3">
-														<div class="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p class="font-bold text-indigo-900">Assessment</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.assesment || 'Belum diisi.'}</p></div>
-														<div class="rounded-xl border border-emerald-100 bg-white p-3"><p class="font-bold text-emerald-900">Plan</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.plan || 'Belum diisi.'}</p></div>
-														<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="font-bold text-slate-800">Catatan Dokter</p><p class="mt-1 text-slate-700">{item.doctor_assesment?.notes || 'Belum diisi.'}</p></div>
+														<div class="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p class="font-bold text-indigo-900">Assessment</p><p class="mt-1 text-slate-700">{item.appointment?.doctor_assesment?.assesment || 'Belum diisi.'}</p></div>
+														<div class="rounded-xl border border-emerald-100 bg-white p-3"><p class="font-bold text-emerald-900">Plan</p><p class="mt-1 text-slate-700">{item.appointment?.doctor_assesment?.plan || 'Belum diisi.'}</p></div>
+														<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="font-bold text-slate-800">Catatan Dokter</p><p class="mt-1 text-slate-700">{item.appointment?.doctor_assesment?.notes || 'Belum diisi.'}</p></div>
 													</div>
 												</div>
 											{/if}
@@ -996,7 +1018,7 @@
 												class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
 											>
 												<option value="">— Semua Poliklinik —</option>
-												{#each departmentStore.list as dept}
+												{#each departmentStore.list as dept (dept.id)}
 													<option value={dept.id}>{dept.name}</option>
 												{/each}
 											</select>
