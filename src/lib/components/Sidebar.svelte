@@ -3,7 +3,7 @@
 	import { clearAuth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	interface Props {
-		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin' | 'apoteker';
+		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin' | 'apoteker' | 'perawat';
 		activeMenu: string;
 		isOpen: boolean;
 		onMenuSelect: (menuId: string) => void;
@@ -48,6 +48,10 @@
 			{ id: 'inventory', label: 'Manajemen Stok', iconName: 'database' },
 			{ id: 'users', label: 'Direktori Pasien', iconName: 'users' },
 			{ id: 'pengaturan', label: 'Pengaturan', iconName: 'pengaturan' }
+		],
+		perawat: [
+			{ id: 'beranda', label: 'Antrean Poli', iconName: 'beranda' },
+			{ id: 'riwayat', label: 'Riwayat Pasien', iconName: 'database' }
 		]
 	};
 

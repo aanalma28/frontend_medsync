@@ -172,6 +172,8 @@
 										? '/admin/dashboard'
 										: user.role.toLowerCase() === 'superadmin'
 											? '/superadmin/dashboard'
+											: user.role.toLowerCase() === 'nurse'
+												? '/nurse/dashboard'
 											: '/login';
 					goto(dashboardPath);
 				} else {
