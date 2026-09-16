@@ -1,5 +1,18 @@
 import { api } from '$lib/api/api';
 
+export type AppointmentStatus =
+	| 'PENDING'
+	| 'CONFIRMED'
+	| 'CANCELLED'
+	| 'COMPLETED';
+
+export type VisitStatus =
+	| 'REGISTERED'
+	| 'NURSE_CHECKED'
+	| 'DOCTOR_EXAMINED'
+	| 'CANCELLED'
+	| 'COMPLETED';
+
 export type ScheduleSlot = {
 	id: string;
 	name: string;
@@ -47,20 +60,22 @@ export type NurseAssessment = {
 	temperature?: number | null;
 	weight?: number | null;
 	height?: number | null;
+	notes?: string | null;
 };
 
-export type PatientAppointment = {			
+export type PatientAppointment = {
 	appointment?: {
 		id: string;
 		queue_number: number;
-		status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+		status: AppointmentStatus;
+		visit_id: string | null;
+		visit_status?: VisitStatus | null;
 		createdAt: string;
 		updatedAt?: string;
 		complaint?: string | null;
 		detail_sympton?: string | null;
 		doctor_assesment?: DoctorAssessment | null;
 		nurse_assesment?: NurseAssessment | null;
-
 	};
 	slot?: {
 		id: string;
@@ -86,14 +101,14 @@ export type PatientAppointment = {
 		name: string;
 		gender?: string;
 		age: number;
-	}
+	};
 };
 
 export type AppoinmentInputs = {
-	patient_id: string,
-	complaint: string,
-	detail_sympton: string,
-}
+	patient_id: string;
+	complaint: string;
+	detail_sympton: string;
+};
 
 export function parseBackendError(err: any): string {
 	if (!err) return 'Terjadi kesalahan yang tidak diketahui';
@@ -183,7 +198,7 @@ export async function fetchSchedules(params?: {
 }
 
 export async function fetchAppointments(params?: {
-	status?: string;
+	status?: AppointmentStatus | 'ALL';
 	page?: number;
 	limit?: number;
 }) {
@@ -201,9 +216,11 @@ export async function fetchAppointments(params?: {
 			`/patient/dashboard/appointments${queryString}`
 		);
 
-		console.log(response.data)
-
-		const appointmentItems = extractList<PatientAppointment>(response, ['appointments', 'items', 'results']);
+		const appointmentItems = extractList<PatientAppointment>(response, [
+			'appointments',
+			'items',
+			'results'
+		]);
 		if (appointmentItems.length > 0 || response) {
 			appointments = appointmentItems.map((item) =>
 				item.appointment ? { ...item, ...item.appointment } : item
@@ -225,7 +242,6 @@ export async function fetchAppointments(params?: {
 export async function createAppointment(slotPracticeId: string, appoinmentInputs: AppoinmentInputs) {
 	isSubmitting = true;
 	error = null;
-	console.log(appoinmentInputs)
 
 	try {
 		const response = await api.post<{ statusCode: number; message: string; data: any }>(
@@ -234,7 +250,7 @@ export async function createAppointment(slotPracticeId: string, appoinmentInputs
 				slot_practice_id: slotPracticeId,
 				patient_id: appoinmentInputs.patient_id,
 				complaint: appoinmentInputs.complaint,
-				detail_sympton: appoinmentInputs.detail_sympton,
+				detail_sympton: appoinmentInputs.detail_sympton
 			}
 		);
 
@@ -242,7 +258,6 @@ export async function createAppointment(slotPracticeId: string, appoinmentInputs
 		return response;
 	} catch (err: any) {
 		const parsed = parseBackendError(err);
-		console.log(parsed)
 		error = parsed;
 		throw new Error(parsed);
 	} finally {
