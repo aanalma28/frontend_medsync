@@ -516,13 +516,13 @@
 										<th scope="col" class="px-5 py-3">Pasien</th>
 										<th scope="col" class="px-5 py-3">Tanggal kunjungan</th>
 										<th scope="col" class="px-5 py-3">Keluhan</th>
-										<th scope="col" class="px-5 py-3">Status</th>
-										<th scope="col" class="px-5 py-3 text-right">Aksi</th>
+										<th scope="col" class="min-w-[240px] px-5 py-3">Status</th>
+										<th scope="col" class="w-36 px-5 py-3 text-center">Aksi</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each filteredHistory as visit (visit.visitId)}
-										<tr class="hover:bg-teal-50/30">
+										<tr class="align-middle hover:bg-teal-50/30">
 											<td class="px-5 py-4">
 												<p class="font-semibold text-slate-900">{visit.patient.name}</p>
 												<p class="mt-1 text-xs text-slate-500">{visit.patient.medicalRecordNumber}</p>
@@ -538,17 +538,18 @@
 											<td class="px-5 py-4">
 												<span
 													title={visit.status}
-													class={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusClass(visit.status)}`}
+													class={`status-badge ring-1 ring-inset ${statusClass(visit.status)}`}
 												>
+													<span class="status-dot" aria-hidden="true"></span>
 													{statusLabels[visit.status]}
 												</span>
 											</td>
-											<td class="px-5 py-4 text-right">
+											<td class="px-5 py-4 text-center">
 												<button
 													type="button"
 													aria-label={`Lihat detail kunjungan ${visit.patient.name}, ${dateTimeLabel(visit.date)}`}
 													aria-haspopup="dialog"
-													class="rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-600"
+													class="table-action table-action-secondary"
 													onclick={() => (selectedHistoryVisitId = visit.visitId)}
 												>
 													Detail
@@ -628,18 +629,18 @@
 							<table class="w-full min-w-[1100px] text-left text-sm">
 								<thead class="bg-slate-50 text-xs font-bold tracking-wide text-slate-500 uppercase">
 									<tr>
-										<th class="px-5 py-4">Antrean / Jam daftar</th>
-										<th class="px-5 py-4">Rekam medis / Pasien</th>
-										<th class="px-5 py-4">Jenis kelamin / Umur</th>
-										<th class="px-5 py-4">Jadwal praktik</th>
-										<th class="px-5 py-4">Penjamin</th>
-										<th class="px-5 py-4">Status kunjungan</th>
-										<th class="px-5 py-4">Aksi</th>
+										<th scope="col" class="px-5 py-4">Antrean / Jam daftar</th>
+										<th scope="col" class="px-5 py-4">Rekam medis / Pasien</th>
+										<th scope="col" class="px-5 py-4">Jenis kelamin / Umur</th>
+										<th scope="col" class="px-5 py-4">Jadwal praktik</th>
+										<th scope="col" class="px-5 py-4">Penjamin</th>
+										<th scope="col" class="min-w-[240px] px-5 py-4 whitespace-nowrap">Status kunjungan</th>
+										<th scope="col" class="w-60 min-w-[240px] border-l border-slate-200/70 px-5 py-4 text-center">Aksi</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100">
 									{#each patients as patient (patient.visitId)}
-										<tr class="align-top hover:bg-teal-50/30">
+										<tr class="align-middle hover:bg-teal-50/30">
 											<td class="px-5 py-4">
 												<p class="font-black text-teal-700">{patient.queueNumber}</p>
 												<p class="mt-1 text-xs text-slate-500">{timeLabel(patient.registrationTime)}</p>
@@ -661,55 +662,83 @@
 												</span>
 											</td>
 											<td class="px-5 py-4">
-												<span
-													title={patient.status}
-													class={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${statusClass(patient.status)}`}
-												>
-													{statusLabels[patient.status]}
-												</span>
+												<div class="flex flex-col items-start gap-2">
+													<span
+														title={patient.status}
+														class={`status-badge ring-1 ring-inset ${statusClass(patient.status)}`}
+													>
+														<span class="status-dot" aria-hidden="true"></span>
+														{statusLabels[patient.status]}
+													</span>
+													{#if patient.status === 'NURSE_CHECKED'}
+														<span class="flex items-center gap-1.5 pl-3 text-xs font-medium text-teal-700">
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																viewBox="0 0 24 24"
+																fill="none"
+																stroke="currentColor"
+																stroke-width="2"
+																class="h-3.5 w-3.5 shrink-0"
+																aria-hidden="true"
+															>
+																<path stroke-linecap="round" stroke-linejoin="round" d="m5 12 4 4L19 6" />
+															</svg>
+															Asesmen tersimpan
+														</span>
+													{/if}
+												</div>
 											</td>
-											<td class="px-5 py-4">
-												<div class="flex flex-col items-start gap-3">
+											<td class="border-l border-slate-100 px-5 py-4">
+												<div
+													class="grid w-full gap-2"
+													role="group"
+													aria-label={`Aksi kunjungan ${patient.patientName}`}
+												>
 													{#if patient.status === 'REGISTERED'}
 														<button
 															type="button"
-															class="cursor-not-allowed text-xs font-bold text-slate-400"
-															disabled
-															title="Mekanisme notifikasi panggilan belum diimplementasikan"
-														>
-															Panggil pasien (segera hadir)
-														</button>
-														<button
-															type="button"
-															class="text-xs font-bold text-teal-700 hover:text-teal-900 disabled:opacity-50"
+															class="table-action table-action-primary"
+															aria-haspopup="dialog"
 															disabled={isQueueLoading || cancellingVisitId !== null}
 															onclick={() => openAssessment(patient)}
 														>
 															Input Asesmen Perawat
 														</button>
-													{:else if patient.status === 'NURSE_CHECKED'}
-														<span class="text-xs font-semibold text-teal-700">Asesmen tersimpan</span>
-													{/if}
-
-													{#if canCancel(patient.status)}
 														<button
 															type="button"
-															class="text-xs font-bold text-rose-700 hover:text-rose-900 disabled:opacity-50"
-															disabled={isQueueLoading || cancellingVisitId !== null}
-															onclick={() => cancelVisit(patient)}
+															class="table-action table-action-unavailable"
+															disabled
+															title="Mekanisme notifikasi panggilan belum diimplementasikan"
 														>
-															{cancellingVisitId === patient.visitId ? 'Membatalkan...' : 'Batalkan kunjungan'}
+															<span>Panggil pasien</span>
+															<span class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] leading-none font-semibold">
+																Segera
+															</span>
 														</button>
 													{/if}
 
 													<button
 														type="button"
-														class="text-xs font-bold text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800 disabled:opacity-50"
+														class="table-action table-action-secondary"
 														disabled={patient.medicalRecordNumber === '-'}
 														onclick={() => openHistory(patient)}
 													>
 														Lihat Riwayat
 													</button>
+
+													{#if canCancel(patient.status)}
+														<div class="mt-1 border-t border-slate-100 pt-2">
+															<button
+																type="button"
+																class="table-action table-action-danger"
+																disabled={isQueueLoading || cancellingVisitId !== null}
+																aria-busy={cancellingVisitId === patient.visitId}
+																onclick={() => cancelVisit(patient)}
+															>
+																{cancellingVisitId === patient.visitId ? 'Membatalkan...' : 'Batalkan kunjungan'}
+															</button>
+														</div>
+													{/if}
 												</div>
 											</td>
 										</tr>
@@ -749,3 +778,111 @@
 		/>
 	{/key}
 {/if}
+
+<style>
+	.status-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2rem;
+		padding: 0.375rem 0.75rem;
+		border-radius: 9999px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		line-height: 1.25rem;
+		white-space: nowrap;
+	}
+
+	.status-dot {
+		width: 0.375rem;
+		height: 0.375rem;
+		flex-shrink: 0;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	.table-action {
+		display: inline-flex;
+		width: 100%;
+		min-height: 2.5rem;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid transparent;
+		border-radius: 0.625rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		line-height: 1.25rem;
+		text-align: center;
+		white-space: nowrap;
+		cursor: pointer;
+		transition:
+			background-color 150ms ease,
+			border-color 150ms ease,
+			color 150ms ease;
+	}
+
+	.table-action:focus-visible {
+		outline: 2px solid #0f766e;
+		outline-offset: 3px;
+	}
+
+	.table-action:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+
+	.table-action-primary {
+		border-color: #0f766e;
+		background: #0f766e;
+		color: white;
+	}
+
+	.table-action-primary:hover:not(:disabled) {
+		border-color: #115e59;
+		background: #115e59;
+	}
+
+	.table-action-secondary {
+		border-color: #cbd5e1;
+		background: white;
+		color: #475569;
+	}
+
+	.table-action-secondary:hover:not(:disabled) {
+		border-color: #99f6e4;
+		background: #f0fdfa;
+		color: #0f766e;
+	}
+
+	.table-action-danger {
+		border-color: #fecdd3;
+		background: #fff1f2;
+		color: #be123c;
+	}
+
+	.table-action-danger:hover:not(:disabled) {
+		border-color: #fda4af;
+		background: #ffe4e6;
+		color: #9f1239;
+	}
+
+	.table-action-danger:focus-visible {
+		outline-color: #be123c;
+	}
+
+	.table-action-unavailable:disabled {
+		border-color: #e2e8f0;
+		border-style: dashed;
+		background: #f8fafc;
+		color: #64748b;
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.table-action {
+			transition: none;
+		}
+	}
+</style>
