@@ -47,6 +47,14 @@ export type RegisteredPatient = {
 	isUrgent?: boolean;
 };
 
+export type DoctorAssesmentData = {
+	subjective: string, 
+	objective: string, 
+	assesment: string, 
+	plan: string, 
+	notes: string
+}
+
 export type PracticeSlot = {
 	id: string;
 	name: string;
@@ -294,6 +302,8 @@ function normalizePatient(item: any, slot?: any): RegisteredPatient {
 		isUrgent: item.isUrgent ?? false
 	};
 }
+
+// ================= API FETCH START =================
 
 /**
  * GET /doctor/practice/schedules
@@ -611,7 +621,7 @@ export async function updateAppointmentStatus(
 
 	try {
 		const response = await api.patch<{ statusCode: number; message: string }>(
-			`/doctor/practice/appointments/${encodeURIComponent(visitId)}/status`,
+			`/doctor/practice/visits/${encodeURIComponent(visitId)}/status`,
 			{ status }
 		);
 
@@ -638,6 +648,31 @@ export async function updateAppointmentStatus(
 		pendingVisitUpdates.delete(visitId);
 	}
 }
+
+export async function createDoctorAssesment(
+	visitId: string,
+	assesmenData: DoctorAssesmentData,
+){
+	const visitIdNormalized = normalizeVisitId(visitId);
+	if (!visitIdNormalized) {
+		throw new Error('ID kunjungan belum tersedia. Silakan perbarui data sebelum mengubah status.');
+	}
+
+	const response = await api.post<{ statusCode: number; message: string }>(
+		'/doctor/practice/examinations',
+		{
+			visitId: visitIdNormalized,
+			subjective: assesmenData.subjective,
+			objective: assesmenData.objective,
+			assessment: assesmenData.assesment,
+			plan: assesmenData.plan,
+			doctorNotes: assesmenData.notes
+
+		}
+	)
+}
+
+// ================= API FETCH STOP =================
 
 export const doctorPracticeStore = {
 	get schedules(): DoctorSchedule[] {

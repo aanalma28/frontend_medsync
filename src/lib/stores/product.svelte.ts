@@ -95,13 +95,13 @@ export async function fetchProducts(params?: {
 			productsMeta = response.meta || null;
 		} else {
 			products = [];
-		}
+		}		
 		return products;
 	} catch (err: any) {
 		console.warn('GET /products failed:', err);
 		error = parseBackendError(err);
 		return [];
-	} finally {
+	} finally {		
 		isLoadingProducts = false;
 	}
 }

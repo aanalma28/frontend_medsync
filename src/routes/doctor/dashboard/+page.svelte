@@ -6,13 +6,15 @@
 	import DashboardSkeletonDokter from '$lib/components/skeleton/DashboardSkeletonDokter.svelte';
 	import SidebarSkeleton from '$lib/components/skeleton/SidebarSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
+	import { productStore } from '$lib/stores/product.svelte'
 	import {
 		doctorPracticeStore,
 		canExaminePatient,
 		canCancelPatient,
 		parseBackendError,
 		type PracticeSessionCard,
-		type RegisteredPatient
+		type RegisteredPatient,
+		type DoctorAssesmentData,
 	} from '$lib/stores/doctorPractice.svelte';
 	import type {
 		AppointmentStatus,
@@ -27,13 +29,13 @@
 		endTime: string;
 		quota: number;
 	};
-	type MedicineSelection = { name: string; usage: string };
+	type MedicineSelection = { name: string; usage: string };	
 	type Receipt = {
 		patientName: string;
 		patientId: string;
 		doctorName: string;
 		date: string;
-		diagnosis: string;
+		doctorCheck: DoctorAssesmentData;
 		medicines: MedicineSelection[];
 	};
 
@@ -75,7 +77,8 @@
 					await Promise.allSettled([
 						doctorPracticeStore.fetchSchedules(),
 						doctorPracticeStore.fetchTodayPatients(),
-						doctorPracticeStore.fetchPatientHistory()
+						doctorPracticeStore.fetchPatientHistory(),
+						productStore.fetchProducts(),
 					]);
 				}
 			} catch (err) {
@@ -92,7 +95,13 @@
 			if (nextDate !== todayDateStr && !isLoading && !isForbidden && !isPatientActionPending && !isRefreshingPatients) {
 				todayDateStr = nextDate;
 				selectedAppointmentId = null;
-				diagnosis = '';
+				doctorCheck = {
+					subjective: '',
+					objective: '',
+					assesment: '',
+					plan: '',
+					notes: '',
+				};
 				searchQuery = '';
 				selectedMedicines = [];
 				void refreshPatients();
@@ -157,7 +166,13 @@
 		}
 	}
 
-	let diagnosis = $state('');
+	let doctorCheck = $state({
+		subjective: '',
+		objective: '',
+		assesment: '',
+		plan: '',
+		notes: '',
+	});
 	let searchQuery = $state('');
 	let selectedMedicines = $state<MedicineSelection[]>([]);
 	let receipt = $state<Receipt | null>(null);
@@ -166,20 +181,11 @@
 	let isPatientActionPending = $derived(isFinishing || cancellingAppointmentId !== null);
 	let isRefreshingPatients = $state(false);
 
-	const medicineCatalog = [
-		{ name: 'Paracetamol 500mg', category: 'Analgesik', notes: 'Penurun demam & pereda nyeri' },
-		{ name: 'Amoxicillin 500mg', category: 'Antibiotik', notes: 'Infeksi bakteri ringan-sedang' },
-		{ name: 'Omeprazole 20mg', category: 'Pencernaan', notes: 'Menurunkan asam lambung' },
-		{ name: 'Isosorbide Dinitrate 5mg', category: 'Jantung', notes: 'Nyeri dada angina' },
-		{ name: 'Cetirizine 10mg', category: 'Antihistamin', notes: 'Alergi & gatal' },
-		{ name: 'Vitamin C 500mg', category: 'Suplemen', notes: 'Daya tahan tubuh' }
-	];
-
 	let filteredMedicines = $derived(
-		medicineCatalog.filter((medicine) => {
+		productStore.products.filter((medicine) => {
 			const query = searchQuery.trim().toLowerCase();
-			return [medicine.name, medicine.category, medicine.notes].some((value) =>
-				value.toLowerCase().includes(query)
+			return [medicine.name, medicine.category, medicine.description].some((value) =>
+				value?.toLowerCase().includes(query)
 			);
 		})
 	);
@@ -222,12 +228,18 @@
 		if (selectedAppointmentId !== appointmentId) {
 			if (
 				activePatient &&
-				(diagnosis.trim() || selectedMedicines.length > 0) &&
-				!window.confirm('Ganti pasien? Draf diagnosis dan resep pasien aktif akan dihapus.')
+				(doctorCheck.subjective.trim() || selectedMedicines.length > 0) &&
+				!window.confirm('Ganti pasien? Draf SOAP, catatan dan resep pasien aktif akan dihapus.')
 			) {
 				return;
 			}
-			diagnosis = '';
+			doctorCheck = {
+				subjective: '',
+				objective: '',
+				assesment: '',
+				plan: '',
+				notes: '',
+			};
 			searchQuery = '';
 			selectedMedicines = [];
 			selectedAppointmentId = appointmentId;
@@ -251,16 +263,30 @@
 			patientId: patient.patientId,
 			doctorName: currentUser.name,
 			date: todayDateDisplay,
-			diagnosis: diagnosis.trim(),
+			doctorCheck: {
+				subjective: doctorCheck.subjective.trim(),
+				objective: doctorCheck.objective.trim(),
+				assesment: doctorCheck.assesment.trim(),
+				plan: doctorCheck.plan.trim(),
+				notes: doctorCheck.notes.trim()
+
+			},
 			medicines: selectedMedicines.map((medicine) => ({ ...medicine }))
 		};
 
 		isFinishing = true;
 		try {
-			await doctorPracticeStore.updateAppointmentStatus(patient.id, 'DOCTOR_EXAMINED');
 			receipt = snapshot;
+			await doctorPracticeStore.createDoctorExamination()
+			await doctorPracticeStore.updateAppointmentStatus(patient.id, 'DOCTOR_EXAMINED');
 			selectedAppointmentId = null;
-			diagnosis = '';
+			doctorCheck = {
+				subjective: '',
+				objective: '',
+				assesment: '',
+				plan: '',
+				notes: '',
+			}
 			searchQuery = '';
 			selectedMedicines = [];
 			showToast('Pemeriksaan dokter selesai. Pasien selanjutnya menerima obat dari apoteker.');
@@ -286,8 +312,8 @@
 
 		const draftWarning =
 			selectedAppointmentId === currentPatient.id &&
-			(diagnosis.trim() || selectedMedicines.length > 0)
-				? '\nDraf diagnosis dan resep pasien ini akan dihapus setelah pembatalan berhasil.'
+			(doctorCheck.assesment.trim() || selectedMedicines.length > 0)
+				? '\nDraf SOAP, catatan dan resep pasien ini akan dihapus setelah pembatalan berhasil.'
 				: '';
 
 		if (!window.confirm(`Batalkan kunjungan ${currentPatient.patientName}?${draftWarning}`)) return;
@@ -297,7 +323,13 @@
 			await doctorPracticeStore.updateAppointmentStatus(currentPatient.id, 'CANCELLED');
 			if (selectedAppointmentId === currentPatient.id) {
 				selectedAppointmentId = null;
-				diagnosis = '';
+				doctorCheck = {
+					subjective: '',
+					objective: '',
+					assesment: '',
+					plan: '',
+					notes: '',
+				}
 				searchQuery = '';
 				selectedMedicines = [];
 			}
@@ -649,7 +681,7 @@
 				<p><strong>Pasien:</strong> {receipt.patientName}</p>
 				<p><strong>No. RM:</strong> {receipt.patientId || '-'}</p>
 				<p><strong>Dokter:</strong> dr. {receipt.doctorName}</p>
-				<p class="whitespace-pre-wrap"><strong>Diagnosis:</strong> {receipt.diagnosis || 'Belum diisi.'}</p>
+				<p class="whitespace-pre-wrap"><strong>Diagnosis:</strong> {receipt.doctorCheck.notes || 'Belum diisi.'}</p>
 			</div>
 			<h4 class="mt-4 border-t border-dashed border-slate-300 pt-3 font-bold">Daftar Obat</h4>
 			<ul class="mt-2 space-y-3 text-sm">
@@ -909,12 +941,48 @@
 								>
 									<fieldset disabled={!activePatient || isPatientActionPending || isRefreshingPatients} class="space-y-4 disabled:opacity-50">
 										<label class="field-label">
-											Hasil Diagnosis Dokter
+											Subjektif
 											<textarea
-												bind:value={diagnosis}
+												bind:value={doctorCheck.subjective}
 												rows="3"
 												class="field-input"
-												placeholder="Tuliskan hasil diagnosis"
+												placeholder="Tuliskan hasil subjektif"
+											></textarea>
+										</label>
+										<label class="field-label">
+											Objektif
+											<textarea
+												bind:value={doctorCheck.objective}
+												rows="3"
+												class="field-input"
+												placeholder="Tuliskan objektif"
+											></textarea>
+										</label>
+										<label class="field-label">
+											Assesmen
+											<textarea
+												bind:value={doctorCheck.assesment}
+												rows="3"
+												class="field-input"
+												placeholder="Tuliskan assesmen"
+											></textarea>
+										</label>
+										<label class="field-label">
+											Plan
+											<textarea
+												bind:value={doctorCheck.plan}
+												rows="3"
+												class="field-input"
+												placeholder="Tuliskan plan"
+											></textarea>
+										</label>
+										<label class="field-label">
+											Catatan Tambahan
+											<textarea
+												bind:value={doctorCheck.notes}
+												rows="3"
+												class="field-input"
+												placeholder="Tuliskan catatan tambahan"
 											></textarea>
 										</label>
 										<label class="field-label">
