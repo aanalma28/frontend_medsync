@@ -47,6 +47,13 @@ export type RegisteredPatient = {
 	isUrgent?: boolean;
 };
 
+export type ProductsDoctorDashboard = {
+	id: string;
+	name: string;
+	category: string;
+	description: string;
+}
+
 export type DoctorAssesmentData = {
 	subjective: string, 
 	objective: string, 
@@ -649,27 +656,21 @@ export async function updateAppointmentStatus(
 	}
 }
 
-export async function createDoctorAssesment(
-	visitId: string,
-	assesmenData: DoctorAssesmentData,
+export async function createDoctorExamination(	
+	assesmenData: any,
 ){
-	const visitIdNormalized = normalizeVisitId(visitId);
+	const visitIdNormalized = normalizeVisitId(assesmenData.visitId);
 	if (!visitIdNormalized) {
 		throw new Error('ID kunjungan belum tersedia. Silakan perbarui data sebelum mengubah status.');
 	}
 
 	const response = await api.post<{ statusCode: number; message: string }>(
 		'/doctor/practice/examinations',
-		{
-			visitId: visitIdNormalized,
-			subjective: assesmenData.subjective,
-			objective: assesmenData.objective,
-			assessment: assesmenData.assesment,
-			plan: assesmenData.plan,
-			doctorNotes: assesmenData.notes
-
+		{			
+			snapshot: assesmenData,
 		}
 	)
+	return response
 }
 
 // ================= API FETCH STOP =================
@@ -745,6 +746,7 @@ export const doctorPracticeStore = {
 	fetchTodayPatients,
 	fetchPatientHistory,
 	createPracticeSchedule,
+	createDoctorExamination,
 	toggleSlotActive,
 	updateSlotStatus,
 	updateAppointmentStatus

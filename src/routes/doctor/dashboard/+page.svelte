@@ -29,8 +29,13 @@
 		endTime: string;
 		quota: number;
 	};
-	type MedicineSelection = { name: string; usage: string };	
+	type MedicineSelection = { 
+		id: string;
+		name: string; 
+		usage: string 
+	};	
 	type Receipt = {
+		visitId?: string;
 		patientName: string;
 		patientId: string;
 		doctorName: string;
@@ -190,12 +195,13 @@
 		})
 	);
 
-	function toggleMedicine(name: string) {
+	function toggleMedicine(id: string, name: string) {
 		if (!activePatient || isPatientActionPending || isRefreshingPatients) return;
 		const existing = selectedMedicines.some((medicine) => medicine.name === name);
 		selectedMedicines = existing
 			? selectedMedicines.filter((medicine) => medicine.name !== name)
-			: [...selectedMedicines, { name, usage: '' }];
+			: [...selectedMedicines, { id, name, usage: '' }];
+		console.log(selectedMedicines)
 	}
 
 	function updateMedicineUsage(name: string, usage: string) {
@@ -259,6 +265,7 @@
 		}
 
 		const snapshot: Receipt = {
+			visitId: patient.visitId || undefined,
 			patientName: patient.patientName,
 			patientId: patient.patientId,
 			doctorName: currentUser.name,
@@ -277,8 +284,10 @@
 		isFinishing = true;
 		try {
 			receipt = snapshot;
-			await doctorPracticeStore.createDoctorExamination()
-			await doctorPracticeStore.updateAppointmentStatus(patient.id, 'DOCTOR_EXAMINED');
+			await Promise.all([
+				doctorPracticeStore.createDoctorExamination(snapshot),
+				// doctorPracticeStore.updateAppointmentStatus(patient.id, 'DOCTOR_EXAMINED'),
+			])
 			selectedAppointmentId = null;
 			doctorCheck = {
 				subjective: '',
@@ -741,14 +750,38 @@
 						{@render nurseDetails(record.nurseAssessment)}
 
 						{#if record.backendStatus === 'DOCTOR_EXAMINED' || record.backendStatus === 'COMPLETED' || record.doctorAssessment}
-							<div class="rounded-xl border border-sky-100 bg-sky-50 p-4">
-								<h4 class="font-bold text-sky-900">SOAP Pemeriksaan Dokter</h4>
-								<div class="mt-2 space-y-2 whitespace-pre-wrap">
-									<p><strong>Subjective:</strong> {record.complaint || 'Belum diisi.'}</p>
-									<p><strong>Objective:</strong> {record.doctorAssessment?.objective || 'Belum diisi.'}</p>
-									<p><strong>Assessment:</strong> {record.doctorAssessment?.assesment || record.diagnosis}</p>
-									<p><strong>Plan:</strong> {record.doctorAssessment?.plan || 'Belum diisi.'}</p>
-									<p><strong>Catatan Dokter:</strong> {record.doctorAssessment?.notes || record.doctorNotes || 'Belum diisi.'}</p>
+							<div class="overflow-hidden rounded-xl border border-sky-100 bg-sky-50 shadow-sm">
+								<!-- Header Card -->
+								<div class="border-b border-sky-200/60 bg-sky-100/50 px-4 py-3">
+									<h4 class="font-bold text-sky-900">SOAP Pemeriksaan Dokter</h4>
+								</div>
+								
+								<!-- Table Container -->
+								<div class="p-2">
+									<table class="w-full text-left text-sm">
+										<tbody class="divide-y divide-sky-200/40">
+											<tr>
+												<td class="w-1/4 px-4 py-3 font-semibold text-sky-900 align-top">Subjective (S)</td>
+												<td class="px-4 py-3 text-slate-700 whitespace-pre-wrap">{record.doctorAssessment?.subjective || 'Belum diisi.'}</td>
+											</tr>
+											<tr>
+												<td class="px-4 py-3 font-semibold text-sky-900 align-top">Objective (O)</td>
+												<td class="px-4 py-3 text-slate-700 whitespace-pre-wrap">{record.doctorAssessment?.objective || 'Belum diisi.'}</td>
+											</tr>
+											<tr>
+												<td class="px-4 py-3 font-semibold text-sky-900 align-top">Assessment (A)</td>
+												<td class="px-4 py-3 text-slate-700 whitespace-pre-wrap">{record.doctorAssessment?.assesment || record.diagnosis || 'Belum diisi.'}</td>
+											</tr>
+											<tr>
+												<td class="px-4 py-3 font-semibold text-sky-900 align-top">Plan (P)</td>
+												<td class="px-4 py-3 text-slate-700 whitespace-pre-wrap">{record.doctorAssessment?.plan || 'Belum diisi.'}</td>
+											</tr>
+											<tr>
+												<td class="px-4 py-3 font-semibold text-sky-900 align-top">Catatan Dokter</td>
+												<td class="px-4 py-3 text-slate-700 whitespace-pre-wrap">{record.doctorAssessment?.notes || record.doctorNotes || 'Belum diisi.'}</td>
+											</tr>
+										</tbody>
+									</table>
 								</div>
 							</div>
 						{:else}
@@ -995,12 +1028,12 @@
 													<div class="flex items-center justify-between gap-3">
 														<div>
 															<p class="text-sm font-bold">{medicine.name}</p>
-															<p class="text-xs text-slate-500">{medicine.category} · {medicine.notes}</p>
+															<p class="text-xs text-slate-500">{medicine.category} · {medicine.description}</p>
 														</div>
 														<button
 															type="button"
 															class="secondary-button"
-															onclick={() => toggleMedicine(medicine.name)}
+															onclick={() => toggleMedicine(medicine.id, medicine.name)}
 														>
 															{selectedMedicines.some((item) => item.name === medicine.name) ? 'Batalkan' : '+ Resepkan'}
 														</button>

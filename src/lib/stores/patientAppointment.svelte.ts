@@ -46,6 +46,7 @@ export type DoctorSchedule = {
 };
 
 export type DoctorAssessment = {
+	subjective?: string | null;
 	objective?: string | null;
 	assesment?: string | null;
 	plan?: string | null;
