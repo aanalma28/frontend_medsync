@@ -185,19 +185,19 @@
 	);
 
 	// Patient directory derived (using userStore.list)
-	let userSearchQuery = $state('');
-	let filteredPatients = $derived(
-		userStore.list.filter((u) => {
-			const isPatientRole = u.role === 'pasien' || u.role === 'PATIENT';
-			const search = userSearchQuery.toLowerCase();
-			const matchQuery =
-				u.name.toLowerCase().includes(search) ||
-				u.email.toLowerCase().includes(search) ||
-				(u.phone && u.phone.toLowerCase().includes(search)) ||
-				(u.displayId && u.displayId.toLowerCase().includes(search));
-			return isPatientRole && matchQuery;
-		})
-	);
+	// let userSearchQuery = $state('');
+	// let filteredPatients = $derived(
+	// 	userStore.list.filter((u) => {
+	// 		const isPatientRole = u.role === 'pasien' || u.role === 'PATIENT';
+	// 		const search = userSearchQuery.toLowerCase();
+	// 		const matchQuery =
+	// 			u.name.toLowerCase().includes(search) ||
+	// 			u.email.toLowerCase().includes(search) ||
+	// 			(u.phone && u.phone.toLowerCase().includes(search)) ||
+	// 			(u.displayId && u.displayId.toLowerCase().includes(search));
+	// 		return isPatientRole && matchQuery;
+	// 	})
+	// );
 
 	// Indonesian Status Helper for Recipes
 	function getRecipeStatusLabel(statusStr?: string): { label: string; class: string } {
@@ -343,7 +343,182 @@
 			showNotification('error', err.message || 'Gagal menebus resep');
 		}
 	}
+
+
+	// ---------DUMMY UNTUK FITUR DIREKTORI PASIEN ------------
+	// --- 1. VARIABEL & STATE (Menggunakan Svelte 5 Runes) ---
+	import { fly, fade } from 'svelte/transition';
+    
+    let userSearchQuery = $state('');
+    let isLoadingDirectory = $state(false);
+    let sortBy = $state('name'); // 'name' | 'visit' | 'allergy' | 'rm'
+    let statusFilter = $state('all'); // 'all' | 'active' | 'inactive'
+    let allergyOnly = $state(false);
+    let selectedPatient = $state(null);
+    let lastSync = $state('Baru saja');
+
+    // Data Dummy Profil Medis & Alergi Pasien
+    let patients = $state([
+        {
+            id: 'usr_001',
+            medical_record_number: 'RM-2026-001',
+            name: 'Ayu Putri Lestari',
+            phone: '081234567890',
+            address: 'Jl. Pemuda No. 12, Kudus',
+            allergies: ['Penisilin', 'Paracetamol (Mild)'],
+            activeMedications: ['Amlodipin 5mg (1x1)', 'Metformin 500mg (2x1)'],
+            lastVisit: '18 Sep 2026',
+            lastRecipeNo: 'TRX-20260918-012',
+            is_active: true
+        },
+        {
+            id: 'usr_002',
+            medical_record_number: 'RM-2026-002',
+            name: 'Budi Santoso',
+            phone: '085678901234',
+            address: 'Jl. R. Ageng Tirtayasa No. 45, Kudus',
+            allergies: ['Sulfonamida'],
+            activeMedications: ['Simvastatin 20mg (1x1 malam)'],
+            lastVisit: '19 Sep 2026',
+            lastRecipeNo: 'TRX-20260919-033',
+            is_active: true
+        },
+        {
+            id: 'usr_003',
+            medical_record_number: 'RM-2026-003',
+            name: 'Siti Aminah',
+            phone: '087890123456',
+            address: 'Kp. Kauman RT 02/01, Kudus',
+            allergies: [],
+            activeMedications: ['Asam Mefenamat 500mg (Jika nyeri)'],
+            lastVisit: '15 Sep 2026',
+            lastRecipeNo: 'TRX-20260915-089',
+            is_active: false
+        }
+    ]);
+
+    // --- 2. HELPERS ---
+    const MONTHS = {
+        jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, may: 4, jun: 5,
+        jul: 6, agu: 7, aug: 7, ags: 7, sep: 8, okt: 9, oct: 9,
+        nov: 10, des: 11, dec: 11
+    };
+
+    function parseVisitDate(str) {
+        if (!str) return 0;
+        const parts = str.trim().split(/\s+/);
+        if (parts.length < 3) return 0;
+        const day = Number(parts[0]);
+        const month = MONTHS[parts[1].toLowerCase().slice(0, 3)];
+        const year = Number(parts[2]);
+        if (Number.isNaN(day) || month === undefined || Number.isNaN(year)) return 0;
+        return new Date(year, month, day).getTime();
+    }
+
+    function initials(name) {
+        return name
+            .split(' ')
+            .filter(Boolean)
+            .slice(0, 2)
+            .map(w => w[0].toUpperCase())
+            .join('');
+    }
+
+    function cleanAllergyName(allergy) {
+        return allergy.replace(/\s*\((mild|moderate|severe|ringan|sedang|berat)\)\s*/i, '').trim();
+    }
+
+    function severityOf(allergy) {
+        const a = allergy.toLowerCase();
+        if (a.includes('mild') || a.includes('ringan')) {
+            return { label: 'Ringan', icon: '⚠️', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+        }
+        if (a.includes('severe') || a.includes('berat')) {
+            return { label: 'Berat', icon: '🚨', cls: 'bg-rose-50 text-rose-700 border-rose-300' };
+        }
+        return { label: 'Sedang', icon: '🚨', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+    }
+
+    function formatPhone(phone) {
+        if (!phone) return '-';
+        return phone.replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
+    }
+
+    function waLink(phone) {
+        const normalized = (phone || '').replace(/^0/, '62').replace(/\D/g, '');
+        return `https://wa.me/${normalized}`;
+    }
+
+    // --- 3. DERIVED STATE ---
+    let stats = $derived({
+        total: patients.length,
+        withAllergy: patients.filter(p => p.allergies.length > 0).length,
+        allergyNotes: patients.reduce((sum, p) => sum + p.allergies.length, 0),
+        meds: patients.reduce((sum, p) => sum + p.activeMedications.length, 0),
+        active: patients.filter(p => p.is_active).length
+    });
+
+    let statCards = $derived([
+        { label: 'Total Pasien', value: stats.total, hint: 'Terdaftar di sistem', icon: '👥', tone: 'bg-sky-50 text-sky-700 ring-sky-200' },
+        { label: 'Punya Alergi', value: stats.withAllergy, hint: `${stats.allergyNotes} catatan alergi`, icon: '🚨', tone: 'bg-rose-50 text-rose-700 ring-rose-200' },
+        { label: 'Obat Aktif', value: stats.meds, hint: 'Total regimen berjalan', icon: '💊', tone: 'bg-amber-50 text-amber-700 ring-amber-200' },
+        { label: 'Pasien Aktif', value: stats.active, hint: `${stats.total - stats.active} non-aktif`, icon: '✅', tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+    ]);
+
+    let filteredPatients = $derived.by(() => {
+        const q = userSearchQuery.trim().toLowerCase();
+
+        const list = patients.filter(p => {
+            const matchQuery =
+                q === '' ||
+                p.name.toLowerCase().includes(q) ||
+                p.medical_record_number.toLowerCase().includes(q) ||
+                p.phone.includes(q) ||
+                p.address.toLowerCase().includes(q);
+
+            const matchStatus =
+                statusFilter === 'all' ||
+                (statusFilter === 'active' ? p.is_active : !p.is_active);
+
+            const matchAllergy = !allergyOnly || p.allergies.length > 0;
+
+            return matchQuery && matchStatus && matchAllergy;
+        });
+
+        return list.sort((a, b) => {
+            if (sortBy === 'visit') return parseVisitDate(b.lastVisit) - parseVisitDate(a.lastVisit);
+            if (sortBy === 'allergy') {
+                return b.allergies.length - a.allergies.length || a.name.localeCompare(b.name);
+            }
+            if (sortBy === 'rm') return a.medical_record_number.localeCompare(b.medical_record_number);
+            return a.name.localeCompare(b.name);
+        });
+    });
+
+    let isFilterActive = $derived(
+        userSearchQuery.trim() !== '' || statusFilter !== 'all' || allergyOnly
+    );
+
+    // --- 4. HANDLERS ---
+    function handleRefresh() {
+        isLoading = true;
+        setTimeout(() => {
+            isLoading = false;
+            lastSync = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }, 600);
+    }
+
+    function resetFilters() {
+        userSearchQuery = '';
+        statusFilter = 'all';
+        allergyOnly = false;
+    }
+
+    function handleKeydown(event) {
+        if (event.key === 'Escape') selectedPatient = null;
+    }
 </script>
+<svelte:window onkeydown={handleKeydown} />
 
 <Title title="Apoteker | Dashboard Utama Farmasi" />
 
@@ -1069,91 +1244,541 @@
 							{/if}
 						</div>
 					</div>
-
-					<!-- ================================================== -->
-					<!-- MENU 3: DIREKTORI PASIEN (SEPARATE VIA SIDEBAR)   -->
-					<!-- ================================================== -->
+				<!-- ================================================== -->
+				<!-- MENU: PROFIL MEDIS & RIWAYAT ALERGI PASIEN         -->
+				<!-- ================================================== -->
 				{:else if activeMenu === 'users'}
 					<div class="space-y-6">
-						<div
-							class="flex flex-col gap-4 rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-						>
-							<div>
-								<h2 class="text-xl font-bold text-slate-900">Direktori & Verifikasi Pasien</h2>
-								<p class="mt-1 text-xs text-slate-500">
-									Daftar pasien terdaftar di MedSync untuk verifikasi identitas dan resep obat.
-								</p>
+						
+						<!-- HEADER & KONTROL -->
+						<div class="relative overflow-hidden rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
+							<div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-300 via-amber-500 to-amber-200"></div>
+
+							<div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+								<div class="flex items-start gap-4">
+									<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-xl ring-1 ring-amber-200">
+										🩺
+									</div>
+									<div>
+										<h2 class="text-xl font-bold text-slate-900">Profil Medis &amp; Alergi Pasien</h2>
+										<p class="mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
+											Pemantauan riwayat alergi dan obat aktif pasien untuk validasi klinis apoteker.
+										</p>
+										<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200">
+											<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+											Sinkronisasi terakhir: {lastSync}
+										</p>
+									</div>
+								</div>
+
+								<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+									<div class="relative">
+										<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+											<circle cx="11" cy="11" r="7" />
+											<path d="m20 20-3.5-3.5" />
+										</svg>
+										<input
+											bind:value={userSearchQuery}
+											class="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-9 text-xs transition outline-none placeholder:text-slate-400 focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100 sm:w-72"
+											placeholder="Cari nama, No. RM, telepon..."
+											aria-label="Cari pasien"
+										/>
+										{#if userSearchQuery}
+											<button
+												onclick={() => (userSearchQuery = '')}
+												class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[11px] text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+												aria-label="Bersihkan pencarian"
+											>
+												✕
+											</button>
+										{/if}
+									</div>
+
+									<button
+										onclick={handleRefresh}
+										disabled={isLoading}
+										class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+									>
+										<span class={isLoading ? 'inline-block animate-spin' : 'inline-block'}>🔄</span>
+										{isLoading ? 'Memuat...' : 'Refresh'}
+									</button>
+								</div>
 							</div>
 
-							<div class="flex items-center gap-3">
-								<input
-									bind:value={userSearchQuery}
-									class="w-full sm:w-72 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-xs transition outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100"
-									placeholder="Cari nama, RM, email, atau telepon..."
-								/>
+							<!-- Baris Filter -->
+							<div class="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+								<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Filter</span>
+
+								<div class="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+									{#each [['all', 'Semua'], ['active', 'Aktif'], ['inactive', 'Non-Aktif']] as [value, label] (value)}
+										<button
+											onclick={() => (statusFilter = value)}
+											class={`rounded-[10px] px-3 py-1.5 text-[11px] font-bold transition ${
+												statusFilter === value
+													? 'bg-white text-slate-900 shadow-sm'
+													: 'text-slate-500 hover:text-slate-700'
+											}`}
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
+
 								<button
-									onclick={() => userStore.fetchUsers({ role: 'pasien' })}
-									class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+									onclick={() => (allergyOnly = !allergyOnly)}
+									aria-pressed={allergyOnly}
+									class={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-bold transition ${
+										allergyOnly
+											? 'border-rose-300 bg-rose-50 text-rose-700'
+											: 'border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700'
+									}`}
 								>
-									🔄 Refresh
+									🚨 Hanya dengan alergi
 								</button>
+
+								<div class="ml-auto flex items-center gap-2">
+									<label for="sort-by" class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+										Urutkan
+									</label>
+									<select
+										id="sort-by"
+										bind:value={sortBy}
+										class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100"
+									>
+										<option value="name">Nama (A-Z)</option>
+										<option value="visit">Kunjungan Terbaru</option>
+										<option value="allergy">Alergi Terbanyak</option>
+										<option value="rm">No. RM</option>
+									</select>
+								</div>
 							</div>
 						</div>
 
-						<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-							{#if userStore.isLoading}
-								<div class="py-12 text-center text-sm font-bold text-slate-400">
-									<span class="inline-block animate-spin mr-2">🌀</span> Memuat data pasien...
+						<!-- RINGKASAN KLINIS -->
+						<div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+							{#each statCards as card (card.label)}
+								<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
+									<div class="flex items-center justify-between gap-2">
+										<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+											{card.label}
+										</span>
+										<span class={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ring-1 ${card.tone}`}>
+											{card.icon}
+										</span>
+									</div>
+									<div class="mt-2 text-2xl font-bold leading-none text-slate-900">{card.value}</div>
+									<div class="mt-1.5 text-[10px] text-slate-400">{card.hint}</div>
+								</div>
+							{/each}
+						</div>
+
+						<!-- KONTEN UTAMA -->
+						<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+							<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+								<p class="text-[11px] text-slate-500">
+									Menampilkan <span class="font-bold text-slate-800">{filteredPatients.length}</span> dari <span class="font-bold text-slate-800">{patients.length}</span> pasien
+									{#if isFilterActive}
+										<span class="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200">
+											terfilter
+										</span>
+									{/if}
+								</p>
+								{#if isFilterActive}
+									<button
+										onclick={resetFilters}
+										class="text-[11px] font-bold text-amber-700 underline decoration-dotted underline-offset-2 transition hover:text-amber-800"
+									>
+										Reset filter
+									</button>
+								{/if}
+							</div>
+
+							{#if isLoadingDirectory}
+								<!-- Skeleton Loading -->
+								<div class="space-y-3">
+									{#each Array(4) as a (a)}
+										<div class="flex animate-pulse items-center gap-4 rounded-2xl border border-slate-100 p-4">
+											<div class="h-10 w-10 shrink-0 rounded-full bg-slate-200"></div>
+											<div class="flex-1 space-y-2">
+												<div class="h-3 w-1/3 rounded-full bg-slate-200"></div>
+												<div class="h-2.5 w-1/2 rounded-full bg-slate-100"></div>
+											</div>
+											<div class="hidden h-6 w-24 rounded-full bg-slate-100 sm:block"></div>
+											<div class="hidden h-6 w-20 rounded-full bg-slate-100 lg:block"></div>
+										</div>
+									{/each}
+									<p class="pt-2 text-center text-xs font-bold text-slate-400">
+										Memuat data klinis pasien...
+									</p>
+								</div>
+							{:else if filteredPatients.length === 0}
+								<!-- Empty State -->
+								<div class="flex flex-col items-center justify-center py-14 text-center">
+									<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-2xl ring-1 ring-slate-200">
+										🔍
+									</div>
+									<h3 class="mt-3 text-sm font-bold text-slate-800">Data pasien tidak ditemukan</h3>
+									<p class="mt-1 max-w-xs text-xs text-slate-500">
+										Tidak ada pasien yang cocok dengan pencarian atau filter yang dipilih.
+									</p>
+									{#if isFilterActive}
+										<button
+											onclick={resetFilters}
+											class="mt-4 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+										>
+											Reset filter
+										</button>
+									{/if}
 								</div>
 							{:else}
-								<div class="overflow-x-auto">
+								<!-- TABEL (Desktop) -->
+								<div class="hidden overflow-x-auto lg:block">
 									<table class="w-full border-collapse text-left text-xs">
 										<thead>
-											<tr
-												class="border-b border-slate-200 text-[11px] font-bold tracking-wider text-slate-400 uppercase"
-											>
-												<th class="px-4 pb-3">No. RM / ID</th>
-												<th class="px-4 pb-3">Nama Pasien</th>
-												<th class="px-4 pb-3">Email</th>
-												<th class="px-4 pb-3">No. Telepon</th>
-												<th class="px-4 pb-3">Alamat</th>
+											<tr class="border-b border-slate-200 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+												<th class="px-4 pb-3">Pasien</th>
+												<th class="px-4 pb-3">Kontak</th>
+												<th class="px-4 pb-3">Riwayat Alergi ⚠️</th>
+												<th class="px-4 pb-3">Obat Aktif / Rutin</th>
+												<th class="px-4 pb-3">Kunjungan Terakhir</th>
 												<th class="px-4 pb-3">Status Akun</th>
+												<th class="px-4 pb-3 text-right">Aksi</th>
 											</tr>
 										</thead>
 										<tbody class="divide-y divide-slate-100 font-medium">
 											{#each filteredPatients as user (user.id)}
-												<tr class="transition hover:bg-slate-50">
-													<td class="px-4 py-4 font-mono font-bold text-amber-800">
-														{user.displayId || user.patientUser?.medical_record_number || user.id.slice(-6)}
-													</td>
-													<td class="px-4 py-4 font-bold text-slate-900 text-sm">
-														{user.name}
-													</td>
-													<td class="px-4 py-4 text-slate-600">{user.email}</td>
-													<td class="px-4 py-4 text-slate-600">{user.phone || '-'}</td>
-													<td class="px-4 py-4 text-slate-600">{user.address || '-'}</td>
+												<tr class="transition hover:bg-amber-50/40">
 													<td class="px-4 py-4">
-														<span
-															class={`rounded-full px-2.5 py-1 text-[10px] font-bold ${user.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}
-														>
+														<div class="flex items-center gap-3">
+															<div class={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ring-1 ${
+																user.allergies.length > 0
+																	? 'bg-rose-50 text-rose-700 ring-rose-200'
+																	: 'bg-slate-50 text-slate-600 ring-slate-200'
+															}`}>
+																{initials(user.name)}
+															</div>
+															<div class="min-w-0">
+																<div class="truncate text-sm font-bold text-slate-900">{user.name}</div>
+																<div class="font-mono text-[10px] font-bold text-amber-800">
+																	{user.medical_record_number}
+																</div>
+															</div>
+														</div>
+													</td>
+
+													<td class="px-4 py-4">
+														<div class="text-[11px] font-semibold text-slate-700">
+															{formatPhone(user.phone)}
+														</div>
+														<div class="mt-0.5 max-w-[180px] truncate text-[10px] text-slate-400" title={user.address}>
+															{user.address}
+														</div>
+													</td>
+
+													<td class="px-4 py-4">
+														{#if user.allergies.length > 0}
+															<div class="flex flex-wrap gap-1">
+																{#each user.allergies as allergy (allergy)}
+																	{@const sev = severityOf(allergy)}
+																	<span class={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold ${sev.cls}`} title={`Tingkat: ${sev.label}`}>
+																		{sev.icon} {cleanAllergyName(allergy)}
+																	</span>
+																{/each}
+															</div>
+															<p class="mt-1 text-[10px] font-bold text-rose-600">
+																{user.allergies.length} catatan — cek sebelum peresepan
+															</p>
+														{:else}
+															<span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+																✓ Tidak ada catatan alergi
+															</span>
+														{/if}
+													</td>
+
+													<td class="px-4 py-4">
+														{#if user.activeMedications.length > 0}
+															<div class="flex flex-wrap gap-1">
+																{#each user.activeMedications as med (med)}
+																	<span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+																		💊 {med}
+																	</span>
+																{/each}
+															</div>
+														{:else}
+															<span class="text-slate-400">-</span>
+														{/if}
+													</td>
+
+													<td class="px-4 py-4">
+														<div class="text-[11px] font-semibold text-slate-700">{user.lastVisit}</div>
+														<div class="font-mono text-[10px] text-slate-400">{user.lastRecipeNo}</div>
+													</td>
+
+													<td class="px-4 py-4">
+														<span class={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+															user.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+														}`}>
+															<span class={`h-1.5 w-1.5 rounded-full ${user.is_active ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
 															{user.is_active ? 'Aktif' : 'Non-Aktif'}
 														</span>
 													</td>
-												</tr>
-											{:else}
-												<tr>
-													<td colspan="6" class="py-12 text-center text-slate-400">
-														Tidak ada data pasien yang sesuai pencarian.
+
+													<td class="px-4 py-4 text-right">
+														<button
+															onclick={() => (selectedPatient = user)}
+															class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
+														>
+															Detail
+														</button>
 													</td>
 												</tr>
 											{/each}
 										</tbody>
 									</table>
 								</div>
+
+								<!-- KARTU (Mobile / Tablet) -->
+								<div class="space-y-3 lg:hidden">
+									{#each filteredPatients as user (user.id)}
+										<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+											<div class="flex items-start justify-between gap-3">
+												<div class="flex items-start gap-3">
+													<div class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ring-1 ${
+														user.allergies.length > 0
+															? 'bg-rose-50 text-rose-700 ring-rose-200'
+															: 'bg-slate-50 text-slate-600 ring-slate-200'
+													}`}>
+														{initials(user.name)}
+													</div>
+													<div>
+														<div class="text-sm font-bold text-slate-900">{user.name}</div>
+														<div class="font-mono text-[10px] font-bold text-amber-800">
+															{user.medical_record_number}
+														</div>
+													</div>
+												</div>
+												<span class={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+													user.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+												}`}>
+													<span class={`h-1.5 w-1.5 rounded-full ${user.is_active ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+													{user.is_active ? 'Aktif' : 'Non-Aktif'}
+												</span>
+											</div>
+
+											<div class="mt-3 grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 text-[11px]">
+												<div>
+													<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kontak</div>
+													<div class="mt-0.5 font-semibold text-slate-700">{formatPhone(user.phone)}</div>
+													<div class="text-[10px] text-slate-400">{user.address}</div>
+												</div>
+
+												<div>
+													<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Alergi</div>
+													<div class="mt-1 flex flex-wrap gap-1">
+														{#if user.allergies.length > 0}
+															{#each user.allergies as allergy (allergy)}
+																{@const sev = severityOf(allergy)}
+																<span class={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold ${sev.cls}`}>
+																	{sev.icon} {cleanAllergyName(allergy)}
+																</span>
+															{/each}
+														{:else}
+															<span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+																✓ Tidak ada catatan alergi
+															</span>
+														{/if}
+													</div>
+												</div>
+
+												<div>
+													<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Obat Aktif</div>
+													<div class="mt-1 flex flex-wrap gap-1">
+														{#if user.activeMedications.length > 0}
+															{#each user.activeMedications as med (med)}
+																<span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+																	💊 {med}
+																</span>
+															{/each}
+														{:else}
+															<span class="text-slate-400">-</span>
+														{/if}
+													</div>
+												</div>
+
+												<div class="flex items-end justify-between gap-3">
+													<div>
+														<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kunjungan Terakhir</div>
+														<div class="mt-0.5 font-semibold text-slate-700">{user.lastVisit}</div>
+														<div class="font-mono text-[10px] text-slate-400">{user.lastRecipeNo}</div>
+													</div>
+													<button
+														onclick={() => (selectedPatient = user)}
+														class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
+													>
+														Detail
+													</button>
+												</div>
+											</div>
+										</div>
+									{/each}
+								</div>
 							{/if}
 						</div>
 					</div>
+					<!-- ================================================== -->
+					<!-- DRAWER: DETAIL PROFIL PASIEN                       -->
+					<!-- ================================================== -->
+					{#if selectedPatient}
+						<div
+							class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm"
+							role="presentation"
+							transition:fade={{ duration: 150 }}
+							onclick={() => (selectedPatient = null)}
+						></div>
 
+						<aside
+							class="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl"
+							transition:fly={{ x: 48, duration: 220 }}
+							role="dialog"
+							aria-modal="true"
+							aria-label={`Detail pasien ${selectedPatient.name}`}
+						>
+							<!-- Header Drawer -->
+							<div class="flex items-start justify-between gap-3 border-b border-slate-200 p-5">
+								<div class="flex items-start gap-3">
+									<div class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-1 ${
+										selectedPatient.allergies.length > 0
+											? 'bg-rose-50 text-rose-700 ring-rose-200'
+											: 'bg-slate-50 text-slate-600 ring-slate-200'
+									}`}>
+										{initials(selectedPatient.name)}
+									</div>
+									<div>
+										<h3 class="text-sm font-bold text-slate-900">{selectedPatient.name}</h3>
+										<div class="font-mono text-[10px] font-bold text-amber-800">
+											{selectedPatient.medical_record_number}
+										</div>
+										<span class={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+											selectedPatient.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+										}`}>
+											<span class={`h-1.5 w-1.5 rounded-full ${selectedPatient.is_active ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+											{selectedPatient.is_active ? 'Aktif' : 'Non-Aktif'}
+										</span>
+									</div>
+								</div>
+								<button
+									onclick={() => (selectedPatient = null)}
+									class="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+									aria-label="Tutup detail"
+								>
+									✕
+								</button>
+							</div>
+
+							<!-- Isi Drawer -->
+							<div class="flex-1 space-y-4 overflow-y-auto p-5">
+								<!-- Peringatan Alergi -->
+								{#if selectedPatient.allergies.length > 0}
+									<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+										<div class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-rose-700">
+											🚨 Peringatan Klinis — Riwayat Alergi
+										</div>
+										<div class="mt-2.5 flex flex-wrap gap-1.5">
+											{#each selectedPatient.allergies as allergy (allergy)}
+												{@const sev = severityOf(allergy)}
+												<span class={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold ${sev.cls}`}>
+													{sev.icon} {cleanAllergyName(allergy)} · {sev.label}
+												</span>
+											{/each}
+										</div>
+										<p class="mt-2 text-[10px] text-rose-600">
+											Verifikasi ulang sebelum menyerahkan obat atau menyusun resep.
+										</p>
+									</div>
+								{:else}
+									<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+										<div class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+											✓ Tidak Ada Catatan Alergi
+										</div>
+										<p class="mt-1.5 text-[10px] text-emerald-700">
+											Belum ada alergi obat yang tercatat untuk pasien ini.
+										</p>
+									</div>
+								{/if}
+
+								<!-- Informasi Kontak -->
+								<div class="rounded-2xl border border-slate-200 p-4">
+									<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Informasi Kontak</div>
+									<dl class="mt-2 space-y-2 text-[11px]">
+										<div class="flex items-start justify-between gap-3">
+											<dt class="text-slate-500">Telepon</dt>
+											<dd class="font-semibold text-slate-800">{formatPhone(selectedPatient.phone)}</dd>
+										</div>
+										<div class="flex items-start justify-between gap-3">
+											<dt class="shrink-0 text-slate-500">Alamat</dt>
+											<dd class="text-right font-semibold text-slate-800">{selectedPatient.address}</dd>
+										</div>
+									</dl>
+									<div class="mt-3 flex gap-2">
+										<a
+											href={`tel:${selectedPatient.phone}`}
+											class="flex-1 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-center text-[11px] font-bold text-slate-700 transition hover:bg-slate-100"
+										>
+											📞 Telepon
+										</a>
+										<a
+											href={waLink(selectedPatient.phone)}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="flex-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+										>
+											💬 WhatsApp
+										</a>
+									</div>
+								</div>
+
+								<!-- Obat Aktif -->
+								<div class="rounded-2xl border border-slate-200 p-4">
+									<div class="flex items-center justify-between">
+										<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+											Obat Aktif / Rutin
+										</div>
+										<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+											{selectedPatient.activeMedications.length} item
+										</span>
+									</div>
+									{#if selectedPatient.activeMedications.length > 0}
+										<ul class="mt-2.5 space-y-1.5">
+											{#each selectedPatient.activeMedications as med (med)}
+												<li class="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700">
+													<span>💊</span>
+													<span>{med}</span>
+												</li>
+											{/each}
+										</ul>
+									{:else}
+										<p class="mt-2 text-[11px] text-slate-400">Tidak ada obat aktif yang tercatat.</p>
+									{/if}
+								</div>
+
+								<!-- Kunjungan Terakhir -->
+								<div class="rounded-2xl border border-slate-200 p-4">
+									<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+										Kunjungan Terakhir
+									</div>
+									<div class="mt-2 flex items-center justify-between gap-3 text-[11px]">
+										<div>
+											<div class="font-bold text-slate-800">{selectedPatient.lastVisit}</div>
+											<div class="font-mono text-[10px] text-slate-400">{selectedPatient.lastRecipeNo}</div>
+										</div>
+										<span class="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200">
+											Resep terakhir
+										</span>
+									</div>
+								</div>
+							</div>
+						</aside>
+					{/if}	
 					<!-- ================================================== -->
 					<!-- MENU 4: PENGATURAN (SEPARATE VIA SIDEBAR)          -->
 					<!-- ================================================== -->
