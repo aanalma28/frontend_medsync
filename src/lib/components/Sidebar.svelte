@@ -3,7 +3,7 @@
 	import { clearAuth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
 	interface Props {
-		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin' | 'apoteker' | 'perawat';
+		role?: 'pasien' | 'dokter' | 'admin' | 'superadmin' | 'apoteker' | 'perawat' | 'logistik';
 		activeMenu: string;
 		isOpen: boolean;
 		onMenuSelect: (menuId: string) => void;
@@ -54,12 +54,12 @@
 			{ id: 'riwayat', label: 'Riwayat Pasien', iconName: 'database' }
 		],
 		logistik: [
-			{ id: 'logistik', label: 'Ringkasan', icon: 'grafik' },
-			{ id: 'produk', label: 'Master Produk', icon: 'produk' },
-			{ id: 'pengadaan', label: 'Penerimaan Barang', icon: 'pengadaan' },
-			{ id: 'distribusi', label: 'Distribusi & Amprahan', icon: 'distribusi' },
-			{ id: 'inventori', label: 'Monitoring & Audit', icon: 'inventori' }
-		],
+			{ id: 'logistik', label: 'Ringkasan', iconName: 'grafik' },
+			{ id: 'produk', label: 'Master Produk', iconName: 'produk' },
+			{ id: 'pengadaan', label: 'Penerimaan Barang', iconName: 'pengadaan' },
+			{ id: 'distribusi', label: 'Distribusi & Amprahan', iconName: 'distribusi' },
+			{ id: 'inventori', label: 'Monitoring & Audit', iconName: 'inventori' }
+		]
 	};
 
 	let currentMenus = $derived(menuConfig[role] || menuConfig.pasien);
@@ -178,6 +178,46 @@
 			><path
 				fill-rule="evenodd"
 				d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm0 18a8.25 8.25 0 01-5.748-14.159c1.688.583 3.513 1.056 5.485 1.408v12.751zm1.5-12.751c1.972-.352 3.797-.825 5.485-1.408A8.25 8.25 0 0113.5 20.25V7.5z"
+				clip-rule="evenodd"
+			/></svg
+		>
+	{:else if name === 'grafik'}
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"
+			><path
+				d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z"
+			/></svg
+		>
+	{:else if name === 'produk'}
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"
+			><path
+				d="M12.378 1.602a.75.75 0 00-.756 0L3 6.632l9 5.25 9-5.25-8.622-5.03zM21.75 7.93l-9 5.25v9l8.628-5.032a.75.75 0 00.372-.648V7.93zM11.25 22.18v-9l-9-5.25v8.57a.75.75 0 00.372.648l8.628 5.033z"
+			/></svg
+		>
+	{:else if name === 'pengadaan'}
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"
+			><path
+				fill-rule="evenodd"
+				d="M12 2.25a.75.75 0 01.75.75v11.69l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5a.75.75 0 01-1.06 0l-4.5-4.5a.75.75 0 111.06-1.06l3.22 3.22V3a.75.75 0 01.75-.75zm-9 13.5a.75.75 0 01.75.75v2.25a1.5 1.5 0 001.5 1.5h13.5a1.5 1.5 0 001.5-1.5v-2.25a.75.75 0 011.5 0v2.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3v-2.25a.75.75 0 01.75-.75z"
+				clip-rule="evenodd"
+			/></svg
+		>
+	{:else if name === 'distribusi'}
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"
+			><path
+				d="M3.375 4.5C2.339 4.5 1.5 5.34 1.5 6.375V13.5h12V6.375c0-1.036-.84-1.875-1.875-1.875h-8.25zM13.5 15h-12v2.625c0 1.035.84 1.875 1.875 1.875h.375a3 3 0 116 0h3a.75.75 0 00.75-.75V15z"
+			/><path
+				d="M8.25 19.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15.75 6.75a.75.75 0 00-.75.75v11.25c0 .087.015.17.042.248a3 3 0 015.958.464c.853-.175 1.522-.935 1.464-1.883a18.659 18.659 0 00-3.732-10.104 1.837 1.837 0 00-1.47-.725H15.75z"
+			/><path d="M19.5 19.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /></svg
+		>
+	{:else if name === 'inventori'}
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"
+			><path
+				fill-rule="evenodd"
+				d="M7.502 6h7.128A3.375 3.375 0 0118 9.375v9.375a3 3 0 003-3V6.108c0-1.505-1.125-2.811-2.664-2.94a48.972 48.972 0 00-.673-.05A3 3 0 0015 1.5h-1.5a3 3 0 00-2.663 1.618c-.225.015-.45.032-.673.05C8.662 3.295 7.554 4.542 7.502 6zM13.5 3A1.5 1.5 0 0012 4.5h4.5A1.5 1.5 0 0015 3h-1.5z"
+				clip-rule="evenodd"
+			/><path
+				fill-rule="evenodd"
+				d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 013 20.625V9.375zm9.586 4.594a.75.75 0 00-1.172-.938l-2.476 3.096-.908-.937a.75.75 0 10-1.1 1.021l1.5 1.5a.75.75 0 001.135-.082l3-3.75z"
 				clip-rule="evenodd"
 			/></svg
 		>
