@@ -163,18 +163,22 @@
 					// window.location.href would cause a full reload, wiping the memory-only token
 					const dashboardPath =
 						user.role.toLowerCase() === 'patient'
-							? '/pasien/dashboard'
+								? '/pasien/dashboard'
 							: user.role.toLowerCase() === 'general_doctor'
 								? '/doctor/dashboard'
-								: user.role.toLowerCase() === 'pharmacist'
-									? '/apoteker/dashboard'
-									: user.role.toLowerCase() === 'admin'
-										? '/admin/dashboard'
-										: user.role.toLowerCase() === 'superadmin'
-											? '/superadmin/dashboard'
-											: user.role.toLowerCase() === 'nurse'
-												? '/nurse/dashboard'
-											: '/login';
+							: user.role.toLowerCase() === 'pharmacist'
+								? '/apoteker/dashboard'
+							: user.role.toLowerCase() === 'admin'
+								? '/admin/dashboard'
+							: user.role.toLowerCase() === 'superadmin'
+								? '/superadmin/dashboard'
+							: user.role.toLowerCase() === 'nurse'
+								? '/nurse/dashboard'
+							: user.role.toLowerCase() === 'logistic' 
+								? '/logistik/dashboard'
+							: user.role.toLowerCase() === 'logistik'
+								? '/logistik/dashboard'
+							: '/login';
 					goto(dashboardPath);
 				} else {
 					const errorData = await response.json();
