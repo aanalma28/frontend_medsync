@@ -2,6 +2,23 @@ import { api } from '$lib/api/api';
 
 export type ProductCategory = 'DRUG' | 'CONSUMABLE' | 'SUPPLEMENT' | 'MEDICAL_DEVICE' | 'OTHER';
 
+/**
+ * Indonesian labels for the backend category enum.
+ * Keeping these in one place stops the UI from hardcoding raw enum strings.
+ */
+export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
+	DRUG: 'Obat',
+	CONSUMABLE: 'BMHP',
+	SUPPLEMENT: 'Suplemen',
+	MEDICAL_DEVICE: 'Alkes',
+	OTHER: 'Lainnya'
+};
+
+/** Ready-to-render options for <select> / filter dropdowns. */
+export const PRODUCT_CATEGORY_OPTIONS = (
+	Object.keys(PRODUCT_CATEGORY_LABELS) as ProductCategory[]
+).map((value) => ({ value, label: PRODUCT_CATEGORY_LABELS[value] }));
+
 export type Product = {
 	id: string;
 	code: string;
@@ -136,6 +153,39 @@ export async function createProduct(dto: {
 	}
 }
 
+export async function updateProduct(
+	id: string,
+	dto: {
+		code?: string;
+		name?: string;
+		category?: ProductCategory;
+		unit?: string;
+		stock?: number;
+		min_stock?: number;
+		buy_price?: number;
+		sell_price?: number;
+		description?: string;
+	}
+) {
+	isSubmitting = true;
+	error = null;
+
+	try {
+		const response = await api.patch<{ statusCode: number; message: string; data: Product }>(
+			`/products/${id}`,
+			dto
+		);
+		await fetchProducts();
+		return response;
+	} catch (err: any) {
+		const parsed = parseBackendError(err);
+		error = parsed;
+		throw new Error(parsed);
+	} finally {
+		isSubmitting = false;
+	}
+}
+
 export async function restockProduct(
 	id: string,
 	dto: {
@@ -231,6 +281,7 @@ export const productStore = {
 	},
 	fetchProducts,
 	createProduct,
+	updateProduct,
 	restockProduct,
 	fetchPendingPrescriptions,
 	dispensePrescription

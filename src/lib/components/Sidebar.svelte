@@ -52,7 +52,14 @@
 		perawat: [
 			{ id: 'beranda', label: 'Antrean Poli', iconName: 'beranda' },
 			{ id: 'riwayat', label: 'Riwayat Pasien', iconName: 'database' }
-		]
+		],
+		logistik: [
+			{ id: 'logistik', label: 'Ringkasan', icon: 'grafik' },
+			{ id: 'produk', label: 'Master Produk', icon: 'produk' },
+			{ id: 'pengadaan', label: 'Penerimaan Barang', icon: 'pengadaan' },
+			{ id: 'distribusi', label: 'Distribusi & Amprahan', icon: 'distribusi' },
+			{ id: 'inventori', label: 'Monitoring & Audit', icon: 'inventori' }
+		],
 	};
 
 	let currentMenus = $derived(menuConfig[role] || menuConfig.pasien);
