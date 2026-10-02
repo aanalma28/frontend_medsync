@@ -45,6 +45,7 @@
 		],
 		apoteker: [
 			{ id: 'beranda', label: 'Dashboard Utama', iconName: 'beranda' },
+			{ id: 'dispense', label: 'Antrean Resep', iconName: 'resep' },
 			{ id: 'inventory', label: 'Manajemen Stok', iconName: 'database' },
 			{ id: 'users', label: 'Direktori Pasien', iconName: 'users' },
 			{ id: 'pengaturan', label: 'Pengaturan', iconName: 'pengaturan' }
