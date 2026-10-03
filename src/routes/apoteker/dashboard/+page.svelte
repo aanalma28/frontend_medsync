@@ -258,6 +258,17 @@
 		});
 	}
 
+	function formatDateTimeId(dateStr?: string | null): string {
+		if (!dateStr) return '-';
+		return new Date(dateStr).toLocaleString('id-ID', {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
 	// Action handlers
 	async function handleAddProduct() {
 		try {
@@ -517,6 +528,543 @@
     function handleKeydown(event) {
         if (event.key === 'Escape') selectedPatient = null;
     }
+
+    // ====================================================================
+    // FITUR PENGAJUAN BARANG KE GUDANG UTAMA (DUMMY DATA)
+    // ====================================================================
+    // Tipe pengajuan:
+    //   - RESTOCK  : minta tambah stok produk yang sudah ada di master.
+    //   - RETURN   : retur barang rusak / mendekati kedaluwarsa.
+    //   - NEW_ITEM : permintaan produk baru yang belum ada di master.
+    //
+    // STATUS (dikembalikan backend, dari workflow gudang utama):
+    //   PENDING | PROCESSING | APPROVED | REJECTED | COMPLETED | CANCELLED
+    //
+    // KONTRAK API YANG DIBUTUHKAN BACKEND:
+    //   POST   /pengajuan
+    //          body: { type, priority, notes,
+    //                  items: [{ product_id?, product_code, product_name, unit,
+    //                            quantity, reason?, category?, description? }] }
+    //          resp: { id, no_pengajuan, status, priority, created_at, updated_at,
+    //                  submitted_by, from_warehouse_id, to_warehouse_id, items[],
+    //                  notes, response_notes?, responded_by?, responded_at? }
+    //   GET    /pengajuan?status=&type=&search=
+    //          resp: { data: PengajuanRequest[] }
+    //   GET    /pengajuan/:id
+    //   PATCH  /pengajuan/:id/cancel   (hanya valid untuk status PENDING / PROCESSING)
+    //   (Optional) attachment/evidence file untuk RETURN.
+    // ====================================================================
+
+    type PengajuanType = 'RESTOCK' | 'RETURN' | 'NEW_ITEM';
+    type PengajuanStatus =
+        | 'PENDING'
+        | 'PROCESSING'
+        | 'APPROVED'
+        | 'REJECTED'
+        | 'COMPLETED'
+        | 'CANCELLED';
+
+    type PengajuanItemDraft = {
+        product_id?: string;
+        product_code: string;
+        product_name: string;
+        unit: string;
+        quantity: number;
+        reason?: string;
+        category?: ProductCategory;
+        description?: string;
+    };
+
+    type PengajuanRequest = {
+        id: string;
+        no_pengajuan: string;
+        type: PengajuanType;
+        status: PengajuanStatus;
+        priority: 'NORMAL' | 'URGENT';
+        created_at: string;
+        updated_at: string;
+        submitted_by: string;
+        from_warehouse: string;
+        to_warehouse: string;
+        items: PengajuanItemDraft[];
+        notes?: string;
+        response_notes?: string;
+        responded_by?: string;
+        responded_at?: string;
+    };
+
+    // --- Dummy riwayat pengajuan (mewakili semua status & tipe) ----------
+    let pengajuanList = $state<PengajuanRequest[]>([
+        {
+            id: 'pj_001',
+            no_pengajuan: 'PJ-20260918-001',
+            type: 'RESTOCK',
+            status: 'PENDING',
+            priority: 'URGENT',
+            created_at: '2026-09-18T08:20:00',
+            updated_at: '2026-09-18T08:20:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'DRG-PCT-500',
+                    product_name: 'Paracetamol 500mg Tablet',
+                    unit: 'Strip',
+                    quantity: 50,
+                    reason: 'Stok di bawah batas minimum'
+                },
+                {
+                    product_code: 'DRG-AMX-500',
+                    product_name: 'Amoxicillin 500mg Kapsul',
+                    unit: 'Strip',
+                    quantity: 30,
+                    reason: 'Permintaan tinggi poli umum'
+                }
+            ],
+            notes: 'Mohon segera diproses, kebutuhan poli umum meningkat.'
+        },
+        {
+            id: 'pj_002',
+            no_pengajuan: 'PJ-20260917-004',
+            type: 'RETURN',
+            status: 'PROCESSING',
+            priority: 'NORMAL',
+            created_at: '2026-09-17T14:05:00',
+            updated_at: '2026-09-18T09:00:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'DRG-AMB-EXP',
+                    product_name: 'Ambroxol Sirup 60ml',
+                    unit: 'Botol',
+                    quantity: 12,
+                    reason: 'Mendekati kedaluwarsa (Okt 2026)'
+                }
+            ],
+            notes: 'Diserahkan untuk pemusnahan / retur ke supplier.',
+            response_notes: 'Barang diterima gudang, sedang proses penerimaan retur.',
+            responded_by: 'Admin Gudang - Budi',
+            responded_at: '2026-09-18T09:00:00'
+        },
+        {
+            id: 'pj_003',
+            no_pengajuan: 'PJ-20260915-002',
+            type: 'NEW_ITEM',
+            status: 'APPROVED',
+            priority: 'NORMAL',
+            created_at: '2026-09-15T10:10:00',
+            updated_at: '2026-09-16T11:30:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'DRG-VITD-1000',
+                    product_name: 'Vitamin D3 1000 IU',
+                    unit: 'Botol',
+                    quantity: 24,
+                    reason: 'Permintaan dokter spesialis',
+                    category: 'SUPPLEMENT',
+                    description: 'Vitamin D3 1000 IU, 60 softgel per botol'
+                }
+            ],
+            notes: 'Belum ada di master produk.',
+            response_notes: 'Disetujui, akan masuk pengadaan bulan depan.',
+            responded_by: 'Admin Gudang - Budi',
+            responded_at: '2026-09-16T11:30:00'
+        },
+        {
+            id: 'pj_004',
+            no_pengajuan: 'PJ-20260912-007',
+            type: 'RESTOCK',
+            status: 'COMPLETED',
+            priority: 'NORMAL',
+            created_at: '2026-09-12T09:00:00',
+            updated_at: '2026-09-13T16:00:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'DRG-ORS-200',
+                    product_name: 'Oralit / ORS Sachet',
+                    unit: 'Box',
+                    quantity: 20,
+                    reason: 'Pengisian ulang rutin'
+                }
+            ],
+            response_notes: 'Stok telah dikirim dan diterima depo.',
+            responded_by: 'Admin Gudang - Budi',
+            responded_at: '2026-09-13T16:00:00'
+        },
+        {
+            id: 'pj_005',
+            no_pengajuan: 'PJ-20260910-003',
+            type: 'NEW_ITEM',
+            status: 'REJECTED',
+            priority: 'NORMAL',
+            created_at: '2026-09-10T13:40:00',
+            updated_at: '2026-09-11T08:15:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'MED-TENSI-DG',
+                    product_name: 'Tensimeter Digital Lengan',
+                    unit: 'Pcs',
+                    quantity: 5,
+                    reason: 'Kebutuhan alat untuk poli',
+                    category: 'MEDICAL_DEVICE',
+                    description: 'Tensimeter digital lengan atas'
+                }
+            ],
+            response_notes: 'Ditolak: alat sudah tersedia di gudang pusat, silakan ajukan peminjaman.',
+            responded_by: 'Admin Gudang - Budi',
+            responded_at: '2026-09-11T08:15:00'
+        },
+        {
+            id: 'pj_006',
+            no_pengajuan: 'PJ-20260908-001',
+            type: 'RETURN',
+            status: 'CANCELLED',
+            priority: 'NORMAL',
+            created_at: '2026-09-08T11:00:00',
+            updated_at: '2026-09-08T15:20:00',
+            submitted_by: 'Apt. Rina Wijaya',
+            from_warehouse: 'Depo Farmasi Rawat Jalan',
+            to_warehouse: 'Gudang Utama',
+            items: [
+                {
+                    product_code: 'DRG-KTM-100',
+                    product_name: 'Ketoconazole Cream 10g',
+                    unit: 'Tube',
+                    quantity: 8,
+                    reason: 'Kemasan rusak saat pengiriman'
+                }
+            ],
+            notes: 'Dibatalkan karena barang sudah diganti supplier.',
+            response_notes: 'Dibatalkan oleh pemohon.'
+        }
+    ]);
+
+    // --- State: Filter & pencarian riwayat pengajuan ---
+    let pengajuanSearchQuery = $state('');
+    let selectedPengajuanStatusFilter = $state<string>('ALL');
+    let selectedPengajuanTypeFilter = $state<string>('ALL');
+
+    let filteredPengajuan = $derived.by(() => {
+        const q = pengajuanSearchQuery.trim().toLowerCase();
+        return pengajuanList.filter((p) => {
+            const matchStatus =
+                selectedPengajuanStatusFilter === 'ALL' || p.status === selectedPengajuanStatusFilter;
+            const matchType =
+                selectedPengajuanTypeFilter === 'ALL' || p.type === selectedPengajuanTypeFilter;
+            const matchSearch =
+                q === '' ||
+                p.no_pengajuan.toLowerCase().includes(q) ||
+                (p.notes ?? '').toLowerCase().includes(q) ||
+                p.items.some(
+                    (i) =>
+                        i.product_name.toLowerCase().includes(q) ||
+                        i.product_code.toLowerCase().includes(q)
+                );
+            return matchStatus && matchType && matchSearch;
+        });
+    });
+
+    let pengajuanStats = $derived({
+        total: pengajuanList.length,
+        pending: pengajuanList.filter((p) => p.status === 'PENDING').length,
+        processing: pengajuanList.filter((p) => p.status === 'PROCESSING').length,
+        completed: pengajuanList.filter((p) => p.status === 'COMPLETED').length,
+        rejected: pengajuanList.filter((p) => p.status === 'REJECTED' || p.status === 'CANCELLED')
+            .length
+    });
+
+    // --- State: Form pembuatan pengajuan baru ---
+    let isPengajuanModalOpen = $state(false);
+    let pengajuanType = $state<PengajuanType>('RESTOCK');
+    let pengajuanPriority = $state<'NORMAL' | 'URGENT'>('NORMAL');
+    let pengajuanNotes = $state('');
+    let pengajuanItems = $state<PengajuanItemDraft[]>([]);
+    let isSubmittingPengajuan = $state(false);
+
+    let draftItem = $state<{
+        product_id: string;
+        product_code: string;
+        product_name: string;
+        unit: string;
+        quantity: number;
+        reason: string;
+        category: ProductCategory;
+        description: string;
+    }>({
+        product_id: '',
+        product_code: '',
+        product_name: '',
+        unit: 'Strip',
+        quantity: 10,
+        reason: '',
+        category: 'DRUG',
+        description: ''
+    });
+
+    // --- State: Detail pengajuan ---
+    let selectedPengajuanDetail = $state<PengajuanRequest | null>(null);
+
+    function resetDraftItem() {
+        draftItem = {
+            product_id: '',
+            product_code: '',
+            product_name: '',
+            unit: 'Strip',
+            quantity: 10,
+            reason: '',
+            category: 'DRUG',
+            description: ''
+        };
+    }
+
+    function openPengajuanModal(type: PengajuanType = 'RESTOCK') {
+        pengajuanType = type;
+        pengajuanPriority = 'NORMAL';
+        pengajuanNotes = '';
+        pengajuanItems = [];
+        resetDraftItem();
+        isPengajuanModalOpen = true;
+    }
+
+    function switchPengajuanType(type: PengajuanType) {
+        pengajuanType = type;
+        pengajuanItems = [];
+        resetDraftItem();
+    }
+
+    function handleProductSelect(event: Event) {
+        const id = (event.target as HTMLSelectElement).value;
+        const product = productStore.products.find((p) => p.id === id);
+        if (product) {
+            draftItem = {
+                ...draftItem,
+                product_id: product.id,
+                product_code: product.code,
+                product_name: product.name,
+                unit: product.unit
+            };
+        }
+    }
+
+    function addDraftItem() {
+        if (pengajuanType === 'NEW_ITEM') {
+            if (!draftItem.product_name.trim()) {
+                showNotification('error', 'Nama barang baru wajib diisi.');
+                return;
+            }
+            pengajuanItems = [
+                ...pengajuanItems,
+                {
+                    product_code: draftItem.product_code || '-',
+                    product_name: draftItem.product_name.trim(),
+                    unit: draftItem.unit || 'Pcs',
+                    quantity: Number(draftItem.quantity) || 1,
+                    reason: draftItem.reason,
+                    category: draftItem.category,
+                    description: draftItem.description
+                }
+            ];
+        } else {
+            if (!draftItem.product_id) {
+                showNotification('error', 'Pilih produk dari master terlebih dahulu.');
+                return;
+            }
+            pengajuanItems = [
+                ...pengajuanItems,
+                {
+                    product_id: draftItem.product_id,
+                    product_code: draftItem.product_code,
+                    product_name: draftItem.product_name,
+                    unit: draftItem.unit,
+                    quantity: Number(draftItem.quantity) || 1,
+                    reason: draftItem.reason
+                }
+            ];
+        }
+        resetDraftItem();
+    }
+
+    function removeDraftItem(index: number) {
+        pengajuanItems = pengajuanItems.filter((_, i) => i !== index);
+    }
+
+    function handleSubmitPengajuan() {
+        if (pengajuanItems.length === 0) {
+            showNotification('error', 'Tambahkan minimal 1 item pada pengajuan.');
+            return;
+        }
+        isSubmittingPengajuan = true;
+
+        // --- Simulasi pengiriman ke backend (ganti dengan api.post('/pengajuan', ...)) ---
+        setTimeout(() => {
+            const now = new Date().toISOString();
+            const stamp = now.slice(0, 10).replace(/-/g, '');
+            const noPengajuan = `PJ-${stamp}-${String(pengajuanList.length + 1).padStart(3, '0')}`;
+
+            pengajuanList = [
+                {
+                    id: 'pj_' + Date.now(),
+                    no_pengajuan: noPengajuan,
+                    type: pengajuanType,
+                    status: 'PENDING',
+                    priority: pengajuanPriority,
+                    created_at: now,
+                    updated_at: now,
+                    submitted_by: currentUser.name || 'Apoteker',
+                    from_warehouse: 'Depo Farmasi Rawat Jalan',
+                    to_warehouse: 'Gudang Utama',
+                    items: pengajuanItems,
+                    notes: pengajuanNotes
+                },
+                ...pengajuanList
+            ];
+
+            isSubmittingPengajuan = false;
+            isPengajuanModalOpen = false;
+            showNotification(
+                'success',
+                `Pengajuan ${noPengajuan} berhasil dikirim ke Gudang Utama.`
+            );
+        }, 700);
+    }
+
+    function cancelPengajuan(id: string) {
+        const target = pengajuanList.find((p) => p.id === id);
+        if (!target) return;
+        if (target.status !== 'PENDING' && target.status !== 'PROCESSING') {
+            showNotification('error', 'Hanya pengajuan berstatus Pending / Diproses yang bisa dibatalkan.');
+            return;
+        }
+        pengajuanList = pengajuanList.map((p) =>
+            p.id === id
+                ? {
+                      ...p,
+                      status: 'CANCELLED' as PengajuanStatus,
+                      updated_at: new Date().toISOString(),
+                      response_notes: 'Dibatalkan oleh pemohon.'
+                  }
+                : p
+        );
+        showNotification('success', `Pengajuan ${target.no_pengajuan} dibatalkan.`);
+    }
+
+    // --- Label / warna helper untuk tipe & status pengajuan ---
+    function getPengajuanTypeLabel(type: PengajuanType): string {
+        switch (type) {
+            case 'RESTOCK':
+                return 'Restock / Tambah Stok';
+            case 'RETURN':
+                return 'Retur Barang';
+            case 'NEW_ITEM':
+                return 'Permintaan Barang Baru';
+            default:
+                return 'Lainnya';
+        }
+    }
+
+    function getPengajuanTypeClass(type: PengajuanType): string {
+        switch (type) {
+            case 'RESTOCK':
+                return 'bg-amber-100 text-amber-800 border-amber-200';
+            case 'RETURN':
+                return 'bg-purple-100 text-purple-800 border-purple-200';
+            case 'NEW_ITEM':
+                return 'bg-sky-100 text-sky-800 border-sky-200';
+            default:
+                return 'bg-slate-100 text-slate-800 border-slate-200';
+        }
+    }
+
+    function getPengajuanTypeIcon(type: PengajuanType): string {
+        switch (type) {
+            case 'RESTOCK':
+                return '📥';
+            case 'RETURN':
+                return '↩️';
+            case 'NEW_ITEM':
+                return '🆕';
+            default:
+                return '📦';
+        }
+    }
+
+    function getPengajuanStatusMeta(status: PengajuanStatus): {
+        label: string;
+        class: string;
+        dot: string;
+    } {
+        switch (status) {
+            case 'PENDING':
+                return {
+                    label: 'Menunggu Diproses',
+                    class: 'bg-amber-100 text-amber-800 border-amber-200',
+                    dot: 'bg-amber-500'
+                };
+            case 'PROCESSING':
+                return {
+                    label: 'Sedang Diproses',
+                    class: 'bg-blue-100 text-blue-800 border-blue-200',
+                    dot: 'bg-blue-500'
+                };
+            case 'APPROVED':
+                return {
+                    label: 'Disetujui',
+                    class: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+                    dot: 'bg-cyan-500'
+                };
+            case 'COMPLETED':
+                return {
+                    label: 'Selesai',
+                    class: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                    dot: 'bg-emerald-500'
+                };
+            case 'REJECTED':
+                return {
+                    label: 'Ditolak',
+                    class: 'bg-rose-100 text-rose-800 border-rose-200',
+                    dot: 'bg-rose-500'
+                };
+            case 'CANCELLED':
+                return {
+                    label: 'Dibatalkan',
+                    class: 'bg-slate-100 text-slate-700 border-slate-200',
+                    dot: 'bg-slate-400'
+                };
+            default:
+                return {
+                    label: status,
+                    class: 'bg-slate-100 text-slate-800 border-slate-200',
+                    dot: 'bg-slate-400'
+                };
+        }
+    }
+
+    function canCancelPengajuan(status: PengajuanStatus): boolean {
+        return status === 'PENDING' || status === 'PROCESSING';
+    }
+
+    // --- Derived meta for Detail Modal (menggantikan {@const} di dalam <div>,
+    //     karena di Svelte 5 {@const} hanya boleh jadi immediate child block) ---
+    let detailStatusMeta = $derived(
+        selectedPengajuanDetail
+            ? getPengajuanStatusMeta(selectedPengajuanDetail.status)
+            : { label: '', class: '', dot: '' }
+    );
+    let detailTypeClass = $derived(
+        selectedPengajuanDetail ? getPengajuanTypeClass(selectedPengajuanDetail.type) : ''
+    );
 </script>
 <svelte:window onkeydown={handleKeydown} />
 
@@ -1022,7 +1570,25 @@
 								</p>
 							</div>
 
-							<div class="flex flex-wrap items-center gap-3">
+							<div class="flex flex-wrap items-center gap-2">
+								<button
+									onclick={() => openPengajuanModal('RESTOCK')}
+									class="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm transition hover:bg-amber-100"
+								>
+									<span>📥</span> Ajukan Restock
+								</button>
+								<button
+									onclick={() => openPengajuanModal('RETURN')}
+									class="flex items-center gap-2 rounded-xl border border-purple-300 bg-purple-50 px-4 py-3 text-xs font-bold text-purple-800 shadow-sm transition hover:bg-purple-100"
+								>
+									<span>↩️</span> Ajukan Retur
+								</button>
+								<button
+									onclick={() => openPengajuanModal('NEW_ITEM')}
+									class="flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-xs font-bold text-sky-800 shadow-sm transition hover:bg-sky-100"
+								>
+									<span>🆕</span> Permintaan Barang Baru
+								</button>
 								<button
 									onclick={() => (isAddProductModalOpen = true)}
 									class="flex items-center gap-2 rounded-xl bg-amber-600 px-5 py-3 text-xs font-bold text-white shadow-md transition hover:bg-amber-700 focus:ring-2 focus:ring-amber-400"
@@ -1244,6 +1810,335 @@
 							{/if}
 						</div>
 					</div>
+
+				<!-- ================================================== -->
+				<!-- MENU 3: PENGAJUAN BARANG KE GUDANG UTAMA          -->
+				<!-- Restock / Retur / Permintaan Barang Baru + Riwayat -->
+				<!-- ================================================== -->
+				{:else if activeMenu === 'pengajuan'}
+					<div class="space-y-6">
+						<!-- HEADER + AKSI CEPAT -->
+						<div
+							class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between"
+						>
+							<div>
+								<h2 class="text-2xl font-black text-slate-900">
+									Pengajuan Barang ke Gudang Utama
+								</h2>
+								<p class="mt-1 max-w-2xl text-xs text-slate-500">
+									Ajukan <strong>restock</strong>, <strong>retur barang</strong> rusak /
+									mendekati kedaluwarsa, atau <strong>permintaan produk baru</strong>. Seluruh
+									pengajuan dikirim ke admin Gudang Utama dan statusnya dapat dipantau pada
+									daftar riwayat di bawah.
+								</p>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								<button
+									onclick={() => openPengajuanModal('RESTOCK')}
+									class="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm transition hover:bg-amber-100"
+								>
+									<span>📥</span> Ajukan Restock
+								</button>
+								<button
+									onclick={() => openPengajuanModal('RETURN')}
+									class="flex items-center gap-2 rounded-xl border border-purple-300 bg-purple-50 px-4 py-3 text-xs font-bold text-purple-800 shadow-sm transition hover:bg-purple-100"
+								>
+									<span>↩️</span> Ajukan Retur
+								</button>
+								<button
+									onclick={() => openPengajuanModal('NEW_ITEM')}
+									class="flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-xs font-bold text-sky-800 shadow-sm transition hover:bg-sky-100"
+								>
+									<span>🆕</span> Permintaan Baru
+								</button>
+							</div>
+						</div>
+
+						<!-- STAT CARDS -->
+						<section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+							<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+								<div class="flex items-center justify-between">
+									<p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
+										Total Pengajuan
+									</p>
+									<span class="rounded-lg bg-slate-100 p-2 text-slate-600">🗂️</span>
+								</div>
+								<p class="mt-3 text-3xl font-black text-slate-800">{pengajuanStats.total}</p>
+								<span class="mt-1 block text-[10px] font-bold text-slate-500 uppercase">
+									Semua riwayat
+								</span>
+							</div>
+
+							<button
+								onclick={() =>
+									(selectedPengajuanStatusFilter =
+										selectedPengajuanStatusFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+								class={`rounded-2xl border p-5 text-left shadow-sm transition hover:scale-[1.02] ${
+									selectedPengajuanStatusFilter === 'PENDING'
+										? 'border-amber-500 bg-amber-50 ring-2 ring-amber-300'
+										: 'border-amber-200 bg-white'
+								}`}
+							>
+								<div class="flex items-center justify-between">
+									<p class="text-xs font-bold text-amber-800 uppercase tracking-wider">
+										Menunggu Diproses
+									</p>
+									<span class="rounded-lg bg-amber-100 p-2 text-amber-700">⏳</span>
+								</div>
+								<p class="mt-3 text-3xl font-black text-amber-700">
+									{pengajuanStats.pending}
+								</p>
+								<span class="mt-1 block text-[10px] font-bold text-amber-600 uppercase">
+									Status: PENDING
+								</span>
+							</button>
+
+							<button
+								onclick={() =>
+									(selectedPengajuanStatusFilter =
+										selectedPengajuanStatusFilter === 'PROCESSING' ? 'ALL' : 'PROCESSING')}
+								class={`rounded-2xl border p-5 text-left shadow-sm transition hover:scale-[1.02] ${
+									selectedPengajuanStatusFilter === 'PROCESSING'
+										? 'border-blue-500 bg-blue-50 ring-2 ring-blue-300'
+										: 'border-blue-200 bg-white'
+								}`}
+							>
+								<div class="flex items-center justify-between">
+									<p class="text-xs font-bold text-blue-800 uppercase tracking-wider">
+										Sedang Diproses
+									</p>
+									<span class="rounded-lg bg-blue-100 p-2 text-blue-700">🔄</span>
+								</div>
+								<p class="mt-3 text-3xl font-black text-blue-700">
+									{pengajuanStats.processing}
+								</p>
+								<span class="mt-1 block text-[10px] font-bold text-blue-600 uppercase">
+									Status: PROCESSING
+								</span>
+							</button>
+
+							<button
+								onclick={() =>
+									(selectedPengajuanStatusFilter =
+										selectedPengajuanStatusFilter === 'COMPLETED' ? 'ALL' : 'COMPLETED')}
+								class={`rounded-2xl border p-5 text-left shadow-sm transition hover:scale-[1.02] ${
+									selectedPengajuanStatusFilter === 'COMPLETED'
+										? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-300'
+										: 'border-emerald-200 bg-white'
+								}`}
+							>
+								<div class="flex items-center justify-between">
+									<p class="text-xs font-bold text-emerald-800 uppercase tracking-wider">
+										Selesai
+									</p>
+									<span class="rounded-lg bg-emerald-100 p-2 text-emerald-700">✅</span>
+								</div>
+								<p class="mt-3 text-3xl font-black text-emerald-700">
+									{pengajuanStats.completed}
+								</p>
+								<span class="mt-1 block text-[10px] font-bold text-emerald-600 uppercase">
+									Status: COMPLETED
+								</span>
+							</button>
+
+							<div class="rounded-2xl border border-rose-200 bg-white p-5 shadow-sm">
+								<div class="flex items-center justify-between">
+									<p class="text-xs font-bold text-rose-800 uppercase tracking-wider">
+										Ditolak / Dibatalkan
+									</p>
+									<span class="rounded-lg bg-rose-100 p-2 text-rose-700">🚫</span>
+								</div>
+								<p class="mt-3 text-3xl font-black text-rose-700">
+									{pengajuanStats.rejected}
+								</p>
+								<span class="mt-1 block text-[10px] font-bold text-rose-600 uppercase">
+									Rejected / Cancelled
+								</span>
+							</div>
+						</section>
+
+						<!-- TOOLBAR FILTER -->
+						<div
+							class="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm"
+						>
+							<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+								<div class="relative w-full sm:w-80">
+									<input
+										bind:value={pengajuanSearchQuery}
+										class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-xs transition outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-100"
+										placeholder="Cari No. pengajuan, nama barang, atau kode..."
+									/>
+								</div>
+
+								<div class="flex flex-wrap items-center gap-3">
+									<div class="flex items-center gap-2">
+										<label
+											for="pengajuan-status-filter"
+											class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+										>
+											Status
+										</label>
+										<select
+											id="pengajuan-status-filter"
+											bind:value={selectedPengajuanStatusFilter}
+											class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-amber-500 focus:bg-white"
+										>
+											<option value="ALL">Semua Status</option>
+											<option value="PENDING">Menunggu Diproses</option>
+											<option value="PROCESSING">Sedang Diproses</option>
+											<option value="APPROVED">Disetujui</option>
+											<option value="COMPLETED">Selesai</option>
+											<option value="REJECTED">Ditolak</option>
+											<option value="CANCELLED">Dibatalkan</option>
+										</select>
+									</div>
+
+									<div class="flex items-center gap-2">
+										<label
+											for="pengajuan-type-filter"
+											class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+										>
+											Tipe
+										</label>
+										<select
+											id="pengajuan-type-filter"
+											bind:value={selectedPengajuanTypeFilter}
+											class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-amber-500 focus:bg-white"
+										>
+											<option value="ALL">Semua Tipe</option>
+											<option value="RESTOCK">Restock</option>
+											<option value="RETURN">Retur</option>
+											<option value="NEW_ITEM">Barang Baru</option>
+										</select>
+									</div>
+
+									{#if pengajuanSearchQuery || selectedPengajuanStatusFilter !== 'ALL' || selectedPengajuanTypeFilter !== 'ALL'}
+										<button
+											onclick={() => {
+												pengajuanSearchQuery = '';
+												selectedPengajuanStatusFilter = 'ALL';
+												selectedPengajuanTypeFilter = 'ALL';
+											}}
+											class="rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-600 transition hover:bg-slate-200"
+										>
+											Reset Filter ✕
+										</button>
+									{/if}
+								</div>
+							</div>
+						</div>
+
+						<!-- DAFTAR RIWAYAT PENGAJUAN -->
+						<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+							<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+								<div>
+									<h3 class="text-lg font-bold text-slate-900">Riwayat Pengajuan</h3>
+									<p class="text-[11px] text-slate-500">
+										Menampilkan
+										<span class="font-bold text-slate-700">{filteredPengajuan.length}</span>
+										dari <span class="font-bold text-slate-700">{pengajuanList.length}</span>
+										pengajuan.
+									</p>
+								</div>
+							</div>
+
+							{#if filteredPengajuan.length === 0}
+								<div class="rounded-2xl border-2 border-dashed border-slate-200 py-14 text-center">
+									<p class="text-4xl">📭</p>
+									<p class="mt-2 text-base font-bold text-slate-700">Tidak ada pengajuan ditemukan</p>
+									<p class="mx-auto mt-1 max-w-sm text-xs text-slate-400">
+										Belum ada pengajuan yang cocok dengan filter, atau Anda belum mengajukan
+										barang apa pun.
+									</p>
+								</div>
+							{:else}
+								<div class="space-y-4">
+									{#each filteredPengajuan as pj (pj.id)}
+										{@const typeMeta = getPengajuanTypeClass(pj.type)}
+										{@const statusMeta = getPengajuanStatusMeta(pj.status)}
+										<div
+											class="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm transition hover:bg-white hover:shadow-md"
+										>
+											<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+												<div class="min-w-0 flex-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<span
+															class={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-black uppercase ${typeMeta}`}
+														>
+															{getPengajuanTypeIcon(pj.type)}
+															{getPengajuanTypeLabel(pj.type)}
+														</span>
+														<span
+															class={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-black uppercase ${statusMeta.class}`}
+														>
+															<span class={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`}></span>
+															{statusMeta.label}
+														</span>
+														{#if pj.priority === 'URGENT'}
+															<span
+																class="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-black uppercase text-white"
+															>
+																Urgent
+															</span>
+														{/if}
+													</div>
+
+													<p class="mt-2 font-mono text-sm font-black text-slate-900">
+														{pj.no_pengajuan}
+													</p>
+													<p class="mt-1 text-[11px] text-slate-500">
+														Diajukan: <strong class="text-slate-700">{formatDateTimeId(pj.created_at)}</strong>
+														• Diperbarui: <strong class="text-slate-700">{formatDateTimeId(pj.updated_at)}</strong>
+													</p>
+													<p class="text-[11px] text-slate-500">
+														Tujuan: <strong class="text-slate-700">{pj.to_warehouse}</strong>
+														• Dari: <strong class="text-slate-700">{pj.from_warehouse}</strong>
+													</p>
+
+													<!-- Ringkasan item -->
+													<div class="mt-3 flex flex-wrap gap-2">
+														{#each pj.items.slice(0, 3) as item (item.product_code + item.product_name)}
+															<span
+																class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+															>
+																{[...item.product_name][0]} {item.product_name}
+																<span class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+																	{item.quantity} {item.unit}
+																</span>
+															</span>
+														{/each}
+														{#if pj.items.length > 3}
+															<span class="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">
+																+{pj.items.length - 3} item lainnya
+															</span>
+														{/if}
+													</div>
+												</div>
+
+												<div class="flex shrink-0 flex-col items-stretch gap-2 lg:w-44">
+													<button
+														onclick={() => (selectedPengajuanDetail = pj)}
+														class="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+													>
+														🔍 Lihat Detail
+													</button>
+													{#if canCancelPengajuan(pj.status)}
+														<button
+															onclick={() => cancelPengajuan(pj.id)}
+															class="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+														>
+															✕ Batalkan
+														</button>
+													{/if}
+												</div>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</div>
+
 				<!-- ================================================== -->
 				<!-- MENU: PROFIL MEDIS & RIWAYAT ALERGI PASIEN         -->
 				<!-- ================================================== -->
@@ -2164,6 +3059,418 @@
 						{productStore.isSubmitting ? 'Memproses Stok...' : '✅ Selesai / Ditebus'}
 					</button>
 				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================== -->
+<!-- MODAL 4: BUAT PENGAJUAN BARANG KE GUDANG  -->
+<!-- ========================================== -->
+{#if isPengajuanModalOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+		<button
+			onclick={() => (isPengajuanModalOpen = false)}
+			class="absolute inset-0 w-full h-full cursor-default"
+			aria-label="Tutup Modal Pengajuan"
+		></button>
+		<div
+			class="relative z-10 w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl sm:p-8 overflow-hidden max-h-[92vh] overflow-y-auto"
+		>
+			<div class="border-b border-slate-100 pb-3">
+				<span class="rounded bg-slate-900 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+					Pengajuan ke Gudang Utama
+				</span>
+				<h3 class="mt-1 text-xl font-black text-slate-900">Buat Pengajuan Barang</h3>
+				<p class="text-xs text-slate-500">
+					Pengajuan akan dikirim ke <strong>Admin Gudang Utama</strong> dan mendapat nomor pengajuan.
+				</p>
+			</div>
+
+			<!-- Tipe selector -->
+			<div class="mt-4">
+				<p class="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Tipe Pengajuan</p>
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+					<button
+						onclick={() => switchPengajuanType('RESTOCK')}
+						class={`rounded-2xl border p-3 text-left transition ${
+							pengajuanType === 'RESTOCK'
+								? 'border-amber-500 bg-amber-50 ring-2 ring-amber-200'
+								: 'border-slate-200 bg-white hover:bg-slate-50'
+						}`}
+					>
+						<span class="text-lg">📥</span>
+						<p class="mt-1 text-xs font-bold text-slate-900">Restock / Tambah Stok</p>
+						<p class="text-[10px] text-slate-500">Minta tambahan stok produk yang sudah ada.</p>
+					</button>
+					<button
+						onclick={() => switchPengajuanType('RETURN')}
+						class={`rounded-2xl border p-3 text-left transition ${
+							pengajuanType === 'RETURN'
+								? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
+								: 'border-slate-200 bg-white hover:bg-slate-50'
+						}`}
+					>
+						<span class="text-lg">↩️</span>
+						<p class="mt-1 text-xs font-bold text-slate-900">Retur Barang</p>
+						<p class="text-[10px] text-slate-500">Kembalikan barang rusak / mendekati kedaluwarsa.</p>
+					</button>
+					<button
+						onclick={() => switchPengajuanType('NEW_ITEM')}
+						class={`rounded-2xl border p-3 text-left transition ${
+							pengajuanType === 'NEW_ITEM'
+								? 'border-sky-500 bg-sky-50 ring-2 ring-sky-200'
+								: 'border-slate-200 bg-white hover:bg-slate-50'
+						}`}
+					>
+						<span class="text-lg">🆕</span>
+						<p class="mt-1 text-xs font-bold text-slate-900">Permintaan Barang Baru</p>
+						<p class="text-[10px] text-slate-500">Produk belum ada di master inventaris.</p>
+					</button>
+				</div>
+			</div>
+
+			<!-- Prioritas -->
+			<div class="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
+				<div>
+					<p class="text-xs font-bold text-slate-800">Prioritas Pengajuan</p>
+					<p class="text-[10px] text-slate-500">Tandai urgent untuk kebutuhan mendesak.</p>
+				</div>
+				<div class="inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
+					<button
+						onclick={() => (pengajuanPriority = 'NORMAL')}
+						class={`rounded-[10px] px-3 py-1.5 text-[11px] font-bold transition ${
+							pengajuanPriority === 'NORMAL'
+								? 'bg-slate-900 text-white shadow-sm'
+								: 'text-slate-500 hover:text-slate-700'
+						}`}
+					>
+						Normal
+					</button>
+					<button
+						onclick={() => (pengajuanPriority = 'URGENT')}
+						class={`rounded-[10px] px-3 py-1.5 text-[11px] font-bold transition ${
+							pengajuanPriority === 'URGENT'
+								? 'bg-rose-600 text-white shadow-sm'
+								: 'text-slate-500 hover:text-slate-700'
+						}`}
+					>
+						Urgent
+					</button>
+				</div>
+			</div>
+
+			<!-- Form tambah item -->
+			<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+				<p class="mb-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+					{pengajuanType === 'NEW_ITEM' ? 'Data Barang Baru' : 'Pilih Produk'}
+				</p>
+
+				{#if pengajuanType === 'NEW_ITEM'}
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+						<div class="sm:col-span-2">
+							<label for="draft-name" class="mb-1 block text-[11px] font-bold text-slate-700">Nama Barang Baru *</label>
+							<input
+								id="draft-name"
+								bind:value={draftItem.product_name}
+								placeholder="Misal: Vitamin D3 1000 IU"
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+						<div>
+							<label for="draft-category" class="mb-1 block text-[11px] font-bold text-slate-700">Kategori *</label>
+							<select
+								id="draft-category"
+								bind:value={draftItem.category}
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							>
+								<option value="DRUG">Obat (DRUG)</option>
+								<option value="CONSUMABLE">Bahan Habis Pakai</option>
+								<option value="SUPPLEMENT">Suplemen & Vitamin</option>
+								<option value="MEDICAL_DEVICE">Alat Medis</option>
+							</select>
+						</div>
+						<div>
+							<label for="draft-code" class="mb-1 block text-[11px] font-bold text-slate-700">Kode SKU (opsional)</label>
+							<input
+								id="draft-code"
+								bind:value={draftItem.product_code}
+								placeholder="Misal: DRG-VITD-1000"
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+						<div>
+							<label for="draft-unit" class="mb-1 block text-[11px] font-bold text-slate-700">Satuan *</label>
+							<input
+								id="draft-unit"
+								bind:value={draftItem.unit}
+								placeholder="Botol / Pcs"
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+						<div>
+							<label for="draft-qty" class="mb-1 block text-[11px] font-bold text-slate-700">Jumlah *</label>
+							<input
+								id="draft-qty"
+								type="number"
+								min="1"
+								bind:value={draftItem.quantity}
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+						<div class="sm:col-span-3">
+							<label for="draft-desc" class="mb-1 block text-[11px] font-bold text-slate-700">Spesifikasi / Deskripsi</label>
+							<input
+								id="draft-desc"
+								bind:value={draftItem.description}
+								placeholder="Misal: Vitamin D3 1000 IU, 60 softgel per botol"
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+					</div>
+				{:else}
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+						<div class="sm:col-span-3">
+							<label for="draft-product" class="mb-1 block text-[11px] font-bold text-slate-700">Produk dari Master *</label>
+							<select
+								id="draft-product"
+								value={draftItem.product_id}
+								onchange={handleProductSelect}
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							>
+								<option value="">-- Pilih produk --</option>
+								{#each productStore.products as product (product.id)}
+									<option value={product.id}>
+										{product.code} — {product.name} (stok {product.stock} {product.unit})
+									</option>
+								{/each}
+							</select>
+						</div>
+						<div>
+							<label for="draft-qty-2" class="mb-1 block text-[11px] font-bold text-slate-700">Jumlah *</label>
+							<input
+								id="draft-qty-2"
+								type="number"
+								min="1"
+								bind:value={draftItem.quantity}
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="draft-reason" class="mb-1 block text-[11px] font-bold text-slate-700">
+								{pengajuanType === 'RETURN' ? 'Alasan Retur *' : 'Alasan / Keterangan'}
+							</label>
+							<input
+								id="draft-reason"
+								bind:value={draftItem.reason}
+								placeholder={pengajuanType === 'RETURN' ? 'Misal: kemasan rusak' : 'Misal: stok di bawah minimum'}
+								class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
+							/>
+						</div>
+					</div>
+				{/if}
+
+				<button
+					onclick={addDraftItem}
+					class="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 transition hover:bg-amber-100"
+				>
+					➕ Tambah ke Daftar Pengajuan
+				</button>
+			</div>
+
+			<!-- Daftar item yang ditambahkan -->
+			<div class="mt-4">
+				<p class="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+					Item dalam Pengajuan Ini ({pengajuanItems.length})
+				</p>
+				{#if pengajuanItems.length === 0}
+					<div class="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">
+						Belum ada item. Tambahkan minimal 1 item di atas.
+					</div>
+				{:else}
+					<ul class="space-y-2">
+						{#each pengajuanItems as item, i (item.product_code + item.product_name + i)}
+							<li class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
+								<div class="min-w-0">
+									<p class="truncate text-xs font-bold text-slate-900">
+										{item.product_name}
+									</p>
+									<p class="text-[10px] text-slate-500">
+										<span class="font-mono">{item.product_code}</span>
+										• {item.quantity} {item.unit}
+										{#if item.reason}
+											• <span class="italic">{item.reason}</span>
+										{/if}
+									</p>
+								</div>
+								<button
+									onclick={() => removeDraftItem(i)}
+									class="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-rose-700 transition hover:bg-rose-100"
+								>
+									Hapus
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+
+			<!-- Catatan -->
+			<div class="mt-4">
+				<label for="pengajuan-notes" class="mb-1 block text-[11px] font-bold text-slate-700">
+					Catatan Tambahan untuk Gudang Utama
+				</label>
+				<textarea
+					id="pengajuan-notes"
+					bind:value={pengajuanNotes}
+					rows="2"
+					placeholder="Misal: mohon segera, kebutuhan meningkat."
+					class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-amber-500 focus:bg-white"
+				></textarea>
+			</div>
+
+			<div class="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+				<button
+					onclick={() => (isPengajuanModalOpen = false)}
+					class="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100"
+				>
+					Batal
+				</button>
+				<button
+					onclick={handleSubmitPengajuan}
+					disabled={isSubmittingPengajuan}
+					class="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow transition hover:bg-slate-800 disabled:opacity-50"
+				>
+					{isSubmittingPengajuan ? 'Mengirim...' : '📤 Kirim Pengajuan'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ========================================== -->
+<!-- MODAL 5: DETAIL PENGAJUAN                 -->
+<!-- ========================================== -->
+{#if selectedPengajuanDetail}
+	<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+		<button
+			onclick={() => (selectedPengajuanDetail = null)}
+			class="absolute inset-0 w-full h-full cursor-default"
+			aria-label="Tutup Detail Pengajuan"
+		></button>
+		<div
+			class="relative z-10 w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl sm:p-8 overflow-hidden max-h-[92vh] overflow-y-auto"
+		>
+			<div class="border-b border-slate-100 pb-4">
+				<div class="flex flex-wrap items-center gap-2">
+					<span class={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-black uppercase ${detailTypeClass}`}>
+						{getPengajuanTypeIcon(selectedPengajuanDetail.type)}
+						{getPengajuanTypeLabel(selectedPengajuanDetail.type)}
+					</span>
+					<span class={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-black uppercase ${detailStatusMeta.class}`}>
+						<span class={`h-1.5 w-1.5 rounded-full ${detailStatusMeta.dot}`}></span>
+						{detailStatusMeta.label}
+					</span>
+					{#if selectedPengajuanDetail.priority === 'URGENT'}
+						<span class="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-black uppercase text-white">Urgent</span>
+					{/if}
+				</div>
+				<h3 class="mt-2 font-mono text-xl font-black text-slate-900">
+					{selectedPengajuanDetail.no_pengajuan}
+				</h3>
+				<p class="mt-1 text-[11px] text-slate-500">
+					Diajukan oleh: <strong class="text-slate-700">{selectedPengajuanDetail.submitted_by}</strong>
+					• {formatDateTimeId(selectedPengajuanDetail.created_at)}
+				</p>
+				<p class="text-[11px] text-slate-500">
+					Dari <strong class="text-slate-700">{selectedPengajuanDetail.from_warehouse}</strong>
+					ke <strong class="text-slate-700">{selectedPengajuanDetail.to_warehouse}</strong>
+				</p>
+			</div>
+
+			<!-- Item list -->
+			<div class="mt-4">
+				<p class="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+					Item Pengajuan ({selectedPengajuanDetail.items.length})
+				</p>
+				<div class="overflow-hidden rounded-xl border border-slate-200">
+					<table class="w-full border-collapse text-left text-xs">
+						<thead class="bg-slate-50">
+							<tr class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+								<th class="px-3 py-2.5">Barang</th>
+								<th class="px-3 py-2.5 text-center">Jumlah</th>
+								<th class="px-3 py-2.5">Keterangan</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-slate-100">
+							{#each selectedPengajuanDetail.items as item (item.product_code + item.product_name)}
+								<tr>
+									<td class="px-3 py-3">
+										<p class="font-bold text-slate-900">{item.product_name}</p>
+										<p class="font-mono text-[10px] text-slate-400">{item.product_code}</p>
+										{#if item.description}
+											<p class="text-[10px] text-slate-500">{item.description}</p>
+										{/if}
+									</td>
+									<td class="px-3 py-3 text-center font-bold text-slate-800">
+										{item.quantity} {item.unit}
+									</td>
+									<td class="px-3 py-3 text-slate-600">{item.reason || '-'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- Catatan pemohon -->
+			{#if selectedPengajuanDetail.notes}
+				<div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Catatan Pemohon</p>
+					<p class="mt-1 text-[11px] italic text-slate-700">{selectedPengajuanDetail.notes}</p>
+				</div>
+			{/if}
+
+			<!-- Response dari Gudang Utama -->
+			<div class="mt-4 rounded-2xl border border-slate-200 p-4">
+				<p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+					Tanggapan Gudang Utama
+				</p>
+				{#if selectedPengajuanDetail.response_notes}
+					<p class="mt-1.5 text-[11px] text-slate-700">{selectedPengajuanDetail.response_notes}</p>
+					{#if selectedPengajuanDetail.responded_by}
+						<p class="mt-2 text-[10px] text-slate-500">
+							Oleh: <strong class="text-slate-700">{selectedPengajuanDetail.responded_by}</strong>
+							{#if selectedPengajuanDetail.responded_at}
+								• {formatDateTimeId(selectedPengajuanDetail.responded_at)}
+							{/if}
+						</p>
+					{/if}
+				{:else}
+					<p class="mt-1.5 text-[11px] text-slate-400">
+						Belum ada tanggapan dari Gudang Utama. Pengajuan sedang menunggu diproses.
+					</p>
+				{/if}
+			</div>
+
+			<div class="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+				<button
+					onclick={() => (selectedPengajuanDetail = null)}
+					class="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100"
+				>
+					Tutup
+				</button>
+				{#if canCancelPengajuan(selectedPengajuanDetail.status)}
+					<button
+						onclick={() => {
+							cancelPengajuan(selectedPengajuanDetail.id);
+							selectedPengajuanDetail = null;
+						}}
+						class="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow transition hover:bg-rose-700"
+					>
+						✕ Batalkan Pengajuan
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
