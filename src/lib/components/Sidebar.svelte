@@ -52,6 +52,7 @@
 		],
 		perawat: [
 			{ id: 'beranda', label: 'Antrean Poli', iconName: 'beranda' },
+			{ id: 'bmhp', label: 'Stok & Pemakaian BMHP', iconName: 'inventori' },
 			{ id: 'riwayat', label: 'Riwayat Pasien', iconName: 'database' }
 		],
 		logistik: [
