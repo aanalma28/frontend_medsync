@@ -30,12 +30,37 @@ export type Product = {
 	buy_price: number;
 	sell_price: number;
 	description?: string;
+	status: string;
 	is_low_stock: boolean;
-	nearest_exp_date?: string | null;
+	is_out_of_stock: boolean;
 	is_near_expiry: boolean;
-	inventoryLogsCount?: number;
+	/**
+	 * Expiry date of the nearest batch. Replaces the legacy `nearest_exp_date`
+	 * from the previous schema.
+	 */
+	exp_date?: string | null;
+	/**
+	 * `supplierName` is no longer part of the product schema; supplier info
+	 * now lives on InventoryLogs.source_destination (per mutation).
+	 */
+	supplierName?: string | null;
 	createdAt?: string;
 	updatedAt?: string;
+};
+
+/** Aggregate counts returned alongside the product catalog listing. */
+export type ProductSummary = {
+	total_products: number;
+	total_low_stock: number;
+	total_out_of_stock: number;
+};
+
+/** Pagination metadata shape returned by the backend. */
+export type MetaPagination = {
+	total: number;
+	page: number;
+	limit: number;
+	totalPages: number;
 };
 
 export type PrescriptionItem = {
@@ -78,14 +103,79 @@ export function parseBackendError(err: any): string {
 	return formatted || 'Terjadi kesalahan pada server';
 }
 
+/* ------------------------------------------------------------------ */
+/* State                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Full catalog fetched once from the backend. */
+let allProducts = $state<Product[]>([]);
+/** Current page of the catalog after client-side filtering. */
 let products = $state<Product[]>([]);
 let pendingPrescriptions = $state<PendingPrescription[]>([]);
 let isLoadingProducts = $state<boolean>(false);
 let isLoadingPrescriptions = $state<boolean>(false);
 let isSubmitting = $state<boolean>(false);
 let error = $state<string | null>(null);
-let productsMeta = $state<any>(null);
+let productsMeta = $state<MetaPagination | null>(null);
+let productsSummary = $state<ProductSummary | null>(null);
 
+/**
+ * Filter state for the master produk list. All filtering happens in memory,
+ * so changing the category / search / page never triggers a new request.
+ */
+let productFilter = $state<{
+	search: string;
+	category: string;
+	low_stock: boolean;
+	page: number;
+	limit: number;
+}>({
+	search: '',
+	category: 'ALL',
+	low_stock: false,
+	page: 1,
+	limit: 10
+});
+
+/**
+ * Recompute the visible page from the already-fetched catalog.
+ * Pure in-memory work — no server round-trip.
+ */
+function applyProductFilter() {
+	const search = productFilter.search.trim().toLowerCase();
+	const { category, low_stock, page, limit } = productFilter;
+
+	let filtered = allProducts;
+	if (category && category !== 'ALL') {
+		filtered = filtered.filter((p) => p.category === category);
+	}
+	if (low_stock) {
+		filtered = filtered.filter((p) => p.is_low_stock);
+	}
+	if (search) {
+		filtered = filtered.filter(
+			(p) => p.name.toLowerCase().includes(search) || p.code.toLowerCase().includes(search)
+		);
+	}
+
+	const total = filtered.length;
+	const totalPages = Math.max(1, Math.ceil(total / limit));
+	const safePage = Math.min(Math.max(1, page), totalPages);
+	const start = (safePage - 1) * limit;
+
+	products = filtered.slice(start, start + limit);
+	productsMeta = { total, page: safePage, limit, totalPages };
+}
+
+/**
+ * Fetch the whole product catalog **once** — without building a query string.
+ * Category / search / pagination are resolved client-side by `filterProducts`,
+ * so the server is not hit again when the user just switches filters.
+ *
+ * The optional `params` argument is kept for backwards compatibility with
+ * existing callers; it only seeds the in-memory filter and is NOT sent
+ * to the backend.
+ */
 export async function fetchProducts(params?: {
 	search?: string;
 	category?: string;
@@ -97,30 +187,70 @@ export async function fetchProducts(params?: {
 	error = null;
 
 	try {
-		const query = new URLSearchParams();
-		if (params?.search) query.set('search', params.search);
-		if (params?.category) query.set('category', params.category);
-		if (params?.low_stock) query.set('low_stock', 'true');
-		if (params?.page) query.set('page', String(params.page));
-		if (params?.limit) query.set('limit', String(params.limit || 50));
-
-		const queryString = query.toString() ? `?${query.toString()}` : '';
-		const response = await api.get<{ data: Product[]; meta?: any }>(`/products${queryString}`);
+		const response = await api.get<{
+			statusCode?: number;
+			message?: string;
+			data: Product[];
+			summary?: ProductSummary;
+			meta?: MetaPagination;
+		}>('/products');
 
 		if (response && Array.isArray(response.data)) {
-			products = response.data;
-			productsMeta = response.meta || null;
+			allProducts = response.data;
+			productsSummary = response.summary ?? null;
 		} else {
-			products = [];
-		}		
+			allProducts = [];
+			productsSummary = null;
+		}
+
+		// Seed the client-side filter from the caller's params (if any).
+		if (params) {
+			productFilter = {
+				search: params.search ?? productFilter.search,
+				category: params.category ?? productFilter.category,
+				low_stock: params.low_stock ?? productFilter.low_stock,
+				page: params.page ?? productFilter.page,
+				limit: params.limit ?? productFilter.limit
+			};
+		}
+
+		applyProductFilter();
 		return products;
 	} catch (err: any) {
 		console.warn('GET /products failed:', err);
 		error = parseBackendError(err);
+		allProducts = [];
+		products = [];
+		productsMeta = null;
+		productsSummary = null;
 		return [];
-	} finally {		
+	} finally {
 		isLoadingProducts = false;
 	}
+}
+
+/**
+ * Filter the catalog that was already fetched (category, search, page).
+ * Runs entirely in memory — the server is not contacted.
+ */
+export function filterProducts(params?: {
+	search?: string;
+	category?: string;
+	low_stock?: boolean;
+	page?: number;
+	limit?: number;
+}) {
+	if (params) {
+		productFilter = {
+			search: params.search ?? productFilter.search,
+			category: params.category ?? productFilter.category,
+			low_stock: params.low_stock ?? productFilter.low_stock,
+			page: params.page ?? productFilter.page,
+			limit: params.limit ?? productFilter.limit
+		};
+	}
+	applyProductFilter();
+	return products;
 }
 
 export async function createProduct(dto: {
@@ -258,6 +388,11 @@ export async function dispensePrescription(id: string, verifyNotes?: string) {
 }
 
 export const productStore = {
+	/** Full catalog (all products, unfiltered). */
+	get catalog() {
+		return allProducts;
+	},
+	/** Current filtered + paginated page. */
 	get products() {
 		return products;
 	},
@@ -279,7 +414,11 @@ export const productStore = {
 	get productsMeta() {
 		return productsMeta;
 	},
+	get productsSummary() {
+		return productsSummary;
+	},
 	fetchProducts,
+	filterProducts,
 	createProduct,
 	updateProduct,
 	restockProduct,

@@ -24,9 +24,15 @@
 		STOCK_REQUEST_STATUS_VARIANTS,
 		type InventoryLogType,
 		type Product,
-		type ProductCategory,
 		type StockRequest
 	} from '$lib/stores/logistik.svelte';
+	import {
+		productStore,
+		PRODUCT_CATEGORY_LABELS as CATALOG_CATEGORY_LABELS,
+		PRODUCT_CATEGORY_OPTIONS as CATALOG_CATEGORY_OPTIONS,
+		type Product as CatalogProduct,
+		type ProductCategory as CatalogCategory
+	} from '$lib/stores/product.svelte';
 
 	/* ================================================================== */
 	/* Session & layout                                                   */
@@ -55,7 +61,7 @@
 	}
 
 	/* ================================================================== */
-	/* Master Produk                                                      */
+	/* Master Produk (backend katalog via productStore)                   */
 	/* ================================================================== */
 	let productSearch = $state('');
 	let productCategory = $state('ALL');
@@ -64,7 +70,15 @@
 	let productTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function loadProducts() {
-		await logistik.fetchProducts({
+		await productStore.fetchProducts();
+	}
+
+	/**
+	 * Filter kategori/pencarian/halaman di sisi klien memakai data yang sudah
+	 * di-fetch — tidak ada request tambahan ke server saat ganti kategori.
+	 */
+	function applyProductFilter() {
+		productStore.filterProducts({
 			search: productSearch,
 			category: productCategory,
 			page: productPage,
@@ -76,7 +90,7 @@
 		clearTimeout(productTimer);
 		productTimer = setTimeout(() => {
 			productPage = 1;
-			loadProducts();
+			applyProductFilter();
 		}, 350);
 	}
 
@@ -86,8 +100,9 @@
 	let productForm = $state({
 		code: '',
 		name: '',
-		category: 'DRUG' as ProductCategory,
+		category: 'DRUG' as CatalogCategory,
 		unit: '',
+		stock: 0,
 		min_stock: 0,
 		buy_price: 0,
 		sell_price: 0,
@@ -100,6 +115,7 @@
 			name: '',
 			category: 'DRUG',
 			unit: '',
+			stock: 0,
 			min_stock: 0,
 			buy_price: 0,
 			sell_price: 0,
@@ -114,13 +130,14 @@
 		productModalOpen = true;
 	}
 
-	function openEditProduct(product: Product) {
+	function openEditProduct(product: CatalogProduct) {
 		productEditingId = product.id;
 		productForm = {
 			code: product.code,
 			name: product.name,
 			category: product.category,
 			unit: product.unit,
+			stock: product.stock,
 			min_stock: product.min_stock,
 			buy_price: product.buy_price,
 			sell_price: product.sell_price,
@@ -138,10 +155,10 @@
 		}
 		try {
 			if (productEditingId) {
-				await logistik.updateProduct(productEditingId, { ...productForm });
+				await productStore.updateProduct(productEditingId, { ...productForm });
 				toast.success('Produk diperbarui', `${productForm.name} berhasil disimpan.`);
 			} else {
-				await logistik.createProduct({ ...productForm });
+				await productStore.createProduct({ ...productForm });
 				toast.success('Produk ditambahkan', `${productForm.name} berhasil ditambahkan.`);
 			}
 			productModalOpen = false;
@@ -152,7 +169,7 @@
 		}
 	}
 
-	async function confirmDeleteProduct(product: Product) {
+	async function confirmDeleteProduct(product: CatalogProduct) {
 		if (!confirm(`Hapus produk "${product.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
 		try {
 			await logistik.deleteProduct(product.id);
@@ -476,7 +493,9 @@
 				isForbidden = true;
 			} else {
 				currentUser = profile;
-				await loadOverview();
+				// Muat katalog produk dari backend sejak awal agar menu
+				// Master Produk langsung menampilkan data tanpa perlu diklik.
+				await Promise.all([loadOverview(), loadProducts()]);
 			}
 		} catch (err) {
 			console.error('Gagal verifikasi sesi:', err);
@@ -609,7 +628,9 @@
 							<div class="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
 								<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Produk</p>
 								<p class="mt-2 text-3xl font-black text-slate-900">
-									{formatNumber(logistik.products.length)}
+									{formatNumber(
+										productStore.productsSummary?.total_products ?? productStore.products.length
+									)}
 								</p>
 								<p class="mt-1 text-xs font-medium text-slate-400">Terdaftar di master katalog</p>
 							</div>
@@ -771,19 +792,19 @@
 									bind:value={productCategory}
 									onchange={() => {
 										productPage = 1;
-										loadProducts();
+										applyProductFilter();
 									}}
 								>
 									<option value="ALL">Semua kategori</option>
-									{#each PRODUCT_CATEGORY_OPTIONS as opt (opt.value)}
+									{#each CATALOG_CATEGORY_OPTIONS as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</select>
 							</div>
 
-							{#if logistik.isLoadingProducts}
+							{#if productStore.isLoadingProducts}
 								<TableSkeleton rows={6} cols={6} />
-							{:else if logistik.productRows.length === 0}
+							{:else if productStore.products.length === 0}
 								<EmptyState
 									icon="📦"
 									title="Tidak ada produk"
@@ -799,6 +820,7 @@
 												<th class="px-4 py-2.5 font-medium">Produk</th>
 												<th class="px-4 py-2.5 font-medium">Kategori</th>
 												<th class="px-4 py-2.5 font-medium">Satuan</th>
+												<th class="px-4 py-2.5 text-right font-medium">Stok</th>
 												<th class="px-4 py-2.5 text-right font-medium">Min. Stok</th>
 												<th class="px-4 py-2.5 text-right font-medium">Harga Beli</th>
 												<th class="px-4 py-2.5 text-right font-medium">Harga Jual</th>
@@ -806,7 +828,7 @@
 											</tr>
 										</thead>
 										<tbody class="divide-y divide-slate-100">
-											{#each logistik.productRows as product (product.id)}
+											{#each productStore.products as product (product.id)}
 												<tr class="hover:bg-slate-50">
 													<td class="px-4 py-3">
 														<p class="font-medium text-slate-800">{product.name}</p>
@@ -814,10 +836,13 @@
 													</td>
 													<td class="px-4 py-3">
 														<Badge variant="slate">
-															{PRODUCT_CATEGORY_LABELS[product.category]}
+															{CATALOG_CATEGORY_LABELS[product.category]}
 														</Badge>
 													</td>
 													<td class="px-4 py-3 text-slate-600">{product.unit}</td>
+													<td class="px-4 py-3 text-right text-slate-600">
+														{formatNumber(product.stock)}
+													</td>
 													<td class="px-4 py-3 text-right text-slate-600">
 														{formatNumber(product.min_stock)}
 													</td>
@@ -852,10 +877,10 @@
 								</div>
 
 								<Pagination
-									meta={logistik.productMeta}
+									meta={productStore.productsMeta}
 									onpage={(page) => {
 										productPage = page;
-										loadProducts();
+										applyProductFilter();
 									}}
 									label="produk"
 								/>
@@ -1421,7 +1446,7 @@
 					bind:value={productForm.category}
 					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 				>
-					{#each PRODUCT_CATEGORY_OPTIONS as opt (opt.value)}
+					{#each CATALOG_CATEGORY_OPTIONS as opt (opt.value)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
@@ -1436,7 +1461,16 @@
 			</label>
 		</div>
 
-		<div class="grid gap-4 sm:grid-cols-3">
+		<div class="grid gap-4 sm:grid-cols-2">
+			<label class="block">
+				<span class="text-xs font-medium text-slate-600">Stok Awal</span>
+				<input
+					type="number"
+					min="0"
+					bind:value={productForm.stock}
+					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+				/>
+			</label>
 			<label class="block">
 				<span class="text-xs font-medium text-slate-600">Min. Stok</span>
 				<input
@@ -1446,6 +1480,9 @@
 					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 				/>
 			</label>
+		</div>
+
+		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
 				<span class="text-xs font-medium text-slate-600">Harga Beli</span>
 				<input
@@ -1488,10 +1525,14 @@
 		<button
 			type="button"
 			class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
-			disabled={logistik.isSubmitting}
+			disabled={productStore.isSubmitting}
 			onclick={submitProduct}
 		>
-			{logistik.isSubmitting ? 'Menyimpan…' : productEditingId ? 'Simpan Perubahan' : 'Tambah Produk'}
+			{productStore.isSubmitting
+				? 'Menyimpan…'
+				: productEditingId
+					? 'Simpan Perubahan'
+					: 'Tambah Produk'}
 		</button>
 	{/snippet}
 </Modal>
@@ -1813,7 +1854,7 @@
 				<span class="text-xs font-medium text-slate-600">Alasan Penyesuaian *</span>
 				<textarea
 					rows="3"
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+					class="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 					bind:value={adjustReason}
 					placeholder="Contoh: selisih hasil opname, barang rusak, kadaluwarsa, dsb."
 				></textarea>
