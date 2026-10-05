@@ -1475,16 +1475,7 @@
 			</label>
 		</div>
 
-		<div class="grid gap-4 sm:grid-cols-2">
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">Stok Awal</span>
-				<input
-					type="number"
-					min="0"
-					bind:value={productForm.stock}
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
+		<div class="grid gap-4 sm:grid-cols-2">			
 			<label class="block">
 				<span class="text-xs font-medium text-slate-600">Min. Stok</span>
 				<input
