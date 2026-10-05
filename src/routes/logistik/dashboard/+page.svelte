@@ -60,6 +60,18 @@
 		]);
 	}
 
+	/**
+	 * Peringatan stok menipis di menu Ringkasan kini bersumber dari katalog
+	 * produk hasil fetch (productStore.catalog) — bukan lagi dari matriks stok
+	 * per gudang. Produk dengan stok <= min_stock (atau ditandai backend)
+	 * ditampilkan, diurutkan dari defisit terbesar.
+	 */
+	let lowStockProducts = $derived(
+		productStore.catalog
+			.filter((p) => p.is_low_stock || p.is_out_of_stock || p.stock <= p.min_stock)
+			.sort((a, b) => b.min_stock - b.stock - (a.min_stock - a.stock))
+	);
+
 	/* ================================================================== */
 	/* Master Produk (backend katalog via productStore)                   */
 	/* ================================================================== */
@@ -644,7 +656,7 @@
 							<div class="rounded-[24px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
 								<p class="text-xs font-bold tracking-wider text-amber-600 uppercase">Stok Menipis</p>
 								<p class="mt-2 text-3xl font-black text-amber-700">
-									{formatNumber(logistik.lowStockRows.length)}
+									{formatNumber(lowStockProducts.length)}
 								</p>
 								<p class="mt-1 text-xs font-medium text-amber-500">Di bawah batas minimum</p>
 							</div>
@@ -667,10 +679,10 @@
 									<span
 										class="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700"
 									>
-										{logistik.lowStockRows.length} item
+										{lowStockProducts.length} item
 									</span>
 								</div>
-								{#if logistik.lowStockRows.length === 0}
+								{#if lowStockProducts.length === 0}
 									<EmptyState
 										icon="✅"
 										title="Semua stok aman"
@@ -678,24 +690,26 @@
 									/>
 								{:else}
 									<div class="space-y-3">
-										{#each logistik.lowStockRows.slice(0, 5) as row (row.product.id + row.warehouse.id)}
+										{#each lowStockProducts.slice(0, 5) as product (product.id)}
 											<div
 												class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3"
 											>
 												<div class="min-w-0">
 													<p class="truncate text-sm font-bold text-slate-800">
-														{row.product.name}
+														{product.name}
 													</p>
 													<p class="text-xs text-slate-400">
-														{row.warehouse.name} · min {formatNumber(row.min_stock)}
+														{CATALOG_CATEGORY_LABELS[product.category]} · min {formatNumber(
+															product.min_stock
+														)}{product.unit ? ` ${product.unit}` : ''}
 													</p>
 												</div>
 												<div class="ml-3 shrink-0 text-right">
 													<p class="text-sm font-black text-amber-600">
-														{formatNumber(row.stock)}
+														{formatNumber(product.stock)}
 													</p>
 													<p class="text-[11px] text-slate-400">
-														kurang {formatNumber(row.deficit)}
+														kurang {formatNumber(Math.max(0, product.min_stock - product.stock))}
 													</p>
 												</div>
 											</div>
