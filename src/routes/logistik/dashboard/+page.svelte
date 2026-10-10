@@ -201,6 +201,12 @@
 	let purchaseLimit = $state(10);
 	let purchaseTimer: ReturnType<typeof setTimeout> | undefined;
 
+	/**
+	 * Hanya gudang utama (is_main === true) yang boleh menjadi tujuan
+	 * penerimaan barang / purchasing.
+	 */
+	let mainWarehouses = $derived(logistik.warehouses.filter((w) => w.is_main));
+
 	async function loadPurchases() {
 		await logistik.fetchPurchaseLogs({
 			search: purchaseSearch,
@@ -233,9 +239,10 @@
 
 	function openRestock() {
 		const firstProduct = logistik.products[0];
+		// Gudang tujuan dibatasi pada gudang utama (is_main) saja.
 		restockForm = {
 			product_id: firstProduct?.id ?? '',
-			warehouse_id: logistik.warehouses[0]?.id ?? '',
+			warehouse_id: mainWarehouses[0]?.id ?? '',
 			quantity: 0,
 			buy_price: firstProduct?.buy_price ?? 0,
 			batch_number: '',
@@ -480,7 +487,7 @@
 				loadProducts();
 				break;
 			case 'pengadaan':
-				loadPurchases();
+				loadWarehousesAndPurchases();
 				break;
 			case 'distribusi':
 				loadRequests();
@@ -494,6 +501,13 @@
 				loadOverview();
 				break;
 		}
+	}
+
+	async function loadWarehousesAndPurchases() {
+		// Pastikan daftar warehouse (khususnya gudang utama) terbaru sebelum
+		// membuka menu Penerimaan Barang.
+		await logistik.fetchWarehouses();
+		await loadPurchases();
 	}
 
 	onMount(async () => {
@@ -913,7 +927,7 @@
 							<div>
 								<h2 class="text-xl font-bold text-slate-900">Penerimaan Barang</h2>
 								<p class="mt-1 text-sm text-slate-500">
-									Catat penerimaan stok dari supplier ke gudang tujuan.
+									Catat penerimaan stok dari supplier ke gudang utama.
 								</p>
 							</div>
 							<button
@@ -1548,7 +1562,7 @@
 <Modal
 	open={restockOpen}
 	title="Catat Penerimaan Barang"
-	description="Input stok masuk dari supplier ke gudang tujuan."
+	description="Input stok masuk dari supplier ke gudang utama."
 	size="md"
 	onclose={() => (restockOpen = false)}
 >
@@ -1578,12 +1592,19 @@
 				bind:value={restockForm.warehouse_id}
 				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 			>
-				{#each logistik.warehouses as warehouse (warehouse.id)}
-					<option value={warehouse.id}>
-						{warehouse.name} · {WAREHOUSE_TYPE_LABELS[warehouse.type]}
-					</option>
-				{/each}
+				{#if mainWarehouses.length === 0}
+					<option value="" disabled>Belum ada gudang utama</option>
+				{:else}
+					{#each mainWarehouses as warehouse (warehouse.id)}
+						<option value={warehouse.id}>
+							{warehouse.name} · {WAREHOUSE_TYPE_LABELS[warehouse.type]}
+						</option>
+					{/each}
+				{/if}
 			</select>
+			<span class="mt-1 block text-[11px] text-slate-400">
+				Hanya gudang utama (is_main) yang dapat dijadikan tujuan penerimaan/purchasing.
+			</span>
 		</label>
 
 		<div class="grid gap-4 sm:grid-cols-2">

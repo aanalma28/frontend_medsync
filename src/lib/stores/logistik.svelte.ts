@@ -56,13 +56,21 @@ export const WAREHOUSE_TYPE_LABELS: Record<WarehouseType, string> = {
 	WARD: 'Depo Rawat Inap'
 };
 
+/**
+ * Bentuk objek warehouse disamakan dengan response backend (GET /warehouses).
+ * `is_main` menandai gudang utama (bertipe MAIN) yang dipakai untuk keperluan
+ * penerimaan barang / purchasing.
+ */
 export type Warehouse = {
 	id: string;
-	code: string;
 	name: string;
 	type: WarehouseType;
-	location?: string;
-	is_active: boolean;
+	description?: string;
+	is_main: boolean;
+	distinct_product_count: number;
+	total_stock_quantity: number;
+	createdAt?: string;
+	updatedAt?: string;
 };
 
 /* ------------------------------------------------------------------ */
@@ -254,11 +262,12 @@ function seedProducts(): Product[] {
 }
 
 function seedWarehouses(): Warehouse[] {
+	const ts = now();
 	return [
-		{ id: 'wh-01', code: 'GU-01', name: 'Gudang Utama', type: 'MAIN', location: 'Gedung A Lantai 1', is_active: true },
-		{ id: 'wh-02', code: 'DF-01', name: 'Depo Farmasi', type: 'PHARMACY', location: 'Gedung A Lantai 2', is_active: true },
-		{ id: 'wh-03', code: 'DP-01', name: 'Depo Poli/IGD', type: 'CLINIC', location: 'Gedung B Lantai 1', is_active: true },
-		{ id: 'wh-04', code: 'DL-01', name: 'Depo Laboratorium', type: 'LAB', location: 'Gedung C Lantai 1', is_active: true }
+		{ id: 'wh-01', name: 'Gudang Utama', type: 'MAIN', description: 'Gedung A Lantai 1', is_main: true, distinct_product_count: 12, total_stock_quantity: 0, createdAt: ts, updatedAt: ts },
+		{ id: 'wh-02', name: 'Depo Farmasi', type: 'PHARMACY', description: 'Gedung A Lantai 2', is_main: false, distinct_product_count: 11, total_stock_quantity: 0, createdAt: ts, updatedAt: ts },
+		{ id: 'wh-03', name: 'Depo Poli/IGD', type: 'CLINIC', description: 'Gedung B Lantai 1', is_main: false, distinct_product_count: 9, total_stock_quantity: 0, createdAt: ts, updatedAt: ts },
+		{ id: 'wh-04', name: 'Depo Laboratorium', type: 'LAB', description: 'Gedung C Lantai 1', is_main: false, distinct_product_count: 4, total_stock_quantity: 0, createdAt: ts, updatedAt: ts }
 	];
 }
 
@@ -397,6 +406,7 @@ let isLoadingStock = $state(false);
 let isLoadingLogs = $state(false);
 let isLoadingPurchases = $state(false);
 let isLoadingRequests = $state(false);
+let isLoadingWarehouses = $state(false);
 let isSubmitting = $state(false);
 let error = $state<string | null>(null);
 
@@ -442,9 +452,54 @@ function ensureStockRow(warehouseId: string, productId: string): WarehouseStock 
 /* Fetch: Warehouses                                                   */
 /* ------------------------------------------------------------------ */
 
-export async function fetchWarehouses(): Promise<Warehouse[]> {
-	await delay(200);
-	return warehouses;
+type WarehouseListResponse = {
+	statusCode: number;
+	message: string;
+	data: Warehouse[];
+	meta: MetaPagination;
+};
+
+/**
+ * Ambil daftar warehouse dari backend (GET /warehouses).
+ * Backend mengembalikan objek dengan field: id, name, type, description,
+ * is_main, distinct_product_count, total_stock_quantity, createdAt, updatedAt.
+ */
+export async function fetchWarehouses(params?: {
+	search?: string;
+	page?: number;
+	limit?: number;
+}): Promise<Warehouse[]> {
+	isLoadingWarehouses = true;
+	error = null;
+	try {
+		const query = new URLSearchParams();
+		if (params?.search) query.set('search', params.search);
+		if (params?.page) query.set('page', String(params.page));
+		if (params?.limit) query.set('limit', String(params.limit));
+		const qs = query.toString();
+
+		const result = await api.get<WarehouseListResponse>(`/warehouses${qs ? `?${qs}` : ''}`);
+
+		const data = (result.data ?? []).map((w) => ({
+			id: w.id,
+			name: w.name,
+			type: w.type,
+			description: w.description,
+			is_main: w.is_main ?? w.type === 'MAIN',
+			distinct_product_count: w.distinct_product_count ?? 0,
+			total_stock_quantity: w.total_stock_quantity ?? 0,
+			createdAt: w.createdAt,
+			updatedAt: w.updatedAt
+		}));
+
+		warehouses = data;
+		return warehouses;
+	} catch (err) {
+		error = parseError(err);
+		return warehouses;
+	} finally {
+		isLoadingWarehouses = false;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -1020,6 +1075,9 @@ export const logistik = {
 	get warehouses(): Warehouse[] {
 		return warehouses;
 	},
+	get mainWarehouses(): Warehouse[] {
+		return warehouses.filter((w) => w.is_main);
+	},
 
 	/* Turunan */
 	get lowStockRows(): LowStockRow[] {
@@ -1088,6 +1146,9 @@ export const logistik = {
 	},
 	get isLoadingRequests(): boolean {
 		return isLoadingRequests;
+	},
+	get isLoadingWarehouses(): boolean {
+		return isLoadingWarehouses;
 	},
 	get isSubmitting(): boolean {
 		return isSubmitting;
