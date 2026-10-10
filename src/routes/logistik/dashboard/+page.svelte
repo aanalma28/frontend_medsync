@@ -258,11 +258,7 @@
 		if (!restockForm.product_id) {
 			restockError = 'Produk wajib dipilih.';
 			return;
-		}
-		if (!restockForm.warehouse_id) {
-			restockError = 'Gudang tujuan wajib dipilih.';
-			return;
-		}
+		}		
 		if (Number(restockForm.quantity) <= 0) {
 			restockError = 'Kuantiti penerimaan harus lebih dari 0.';
 			return;
