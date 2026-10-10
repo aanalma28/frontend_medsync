@@ -1570,21 +1570,7 @@
 					<option value={product.id}>{product.name} ({product.code})</option>
 				{/each}
 			</select>
-		</label>
-
-		<label class="block">
-			<span class="text-xs font-medium text-slate-600">Gudang Tujuan *</span>
-			<select
-				bind:value={restockForm.warehouse_id}
-				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-			>
-				{#each logistik.warehouses as warehouse (warehouse.id)}
-					<option value={warehouse.id}>
-						{warehouse.name} · {WAREHOUSE_TYPE_LABELS[warehouse.type]}
-					</option>
-				{/each}
-			</select>
-		</label>
+		</label>		
 
 		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
