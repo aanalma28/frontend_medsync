@@ -232,7 +232,7 @@
 	});
 
 	function openRestock() {
-		const firstProduct = productStore.products[0];
+		const firstProduct = logistik.products[0];
 		restockForm = {
 			product_id: firstProduct?.id ?? '',
 			warehouse_id: logistik.warehouses[0]?.id ?? '',
@@ -249,7 +249,7 @@
 	}
 
 	function onRestockProductChange() {
-		const product = productStore.products.find((p) => p.id === restockForm.product_id);
+		const product = logistik.productById(restockForm.product_id);
 		if (product) restockForm.buy_price = product.buy_price;
 	}
 
@@ -258,7 +258,11 @@
 		if (!restockForm.product_id) {
 			restockError = 'Produk wajib dipilih.';
 			return;
-		}		
+		}
+		if (!restockForm.warehouse_id) {
+			restockError = 'Gudang tujuan wajib dipilih.';
+			return;
+		}
 		if (Number(restockForm.quantity) <= 0) {
 			restockError = 'Kuantiti penerimaan harus lebih dari 0.';
 			return;
@@ -1562,11 +1566,25 @@
 				onchange={onRestockProductChange}
 				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 			>
-				{#each productStore.products as product (product.id)}
+				{#each logistik.products as product (product.id)}
 					<option value={product.id}>{product.name} ({product.code})</option>
 				{/each}
 			</select>
-		</label>		
+		</label>
+
+		<label class="block">
+			<span class="text-xs font-medium text-slate-600">Gudang Tujuan *</span>
+			<select
+				bind:value={restockForm.warehouse_id}
+				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+			>
+				{#each logistik.warehouses as warehouse (warehouse.id)}
+					<option value={warehouse.id}>
+						{warehouse.name} · {WAREHOUSE_TYPE_LABELS[warehouse.type]}
+					</option>
+				{/each}
+			</select>
+		</label>
 
 		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
