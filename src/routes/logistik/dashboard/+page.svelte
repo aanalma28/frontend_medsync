@@ -22,6 +22,8 @@
 		INVENTORY_LOG_TYPE_VARIANTS,
 		STOCK_REQUEST_STATUS_LABELS,
 		STOCK_REQUEST_STATUS_VARIANTS,
+		STOCK_BATCH_STATUS_LABELS,
+		STOCK_BATCH_STATUS_VARIANTS,
 		type InventoryLogType,
 		type Product,
 		type StockRequest
@@ -197,6 +199,8 @@
 	/* Penerimaan Barang / Pengadaan                                      */
 	/* ================================================================== */
 	let purchaseSearch = $state('');
+	let purchaseWarehouse = $state('ALL');
+	let purchaseStatus = $state('ALL');
 	let purchasePage = $state(1);
 	let purchaseLimit = $state(10);
 	let purchaseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -208,8 +212,10 @@
 	let mainWarehouses = $derived(logistik.warehouses.filter((w) => w.is_main));
 
 	async function loadPurchases() {
-		await logistik.fetchPurchaseLogs({
+		await logistik.fetchStockBatches({
 			search: purchaseSearch,
+			warehouse_id: purchaseWarehouse,
+			status: purchaseStatus,
 			page: purchasePage,
 			limit: purchaseLimit
 		});
@@ -927,7 +933,7 @@
 							<div>
 								<h2 class="text-xl font-bold text-slate-900">Penerimaan Barang</h2>
 								<p class="mt-1 text-sm text-slate-500">
-									Catat penerimaan stok dari supplier ke gudang utama.
+									Catat penerimaan stok dari supplier ke gudang utama dan pantau kondisi setiap batch.
 								</p>
 							</div>
 							<button
@@ -938,24 +944,102 @@
 							</button>
 						</div>
 
+						<!-- Info cards dari summary backend -->
+						<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+							<div class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Batch</p>
+								<p class="mt-2 text-2xl font-black text-slate-900">
+									{formatNumber(logistik.purchaseSummary?.total_batches ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-slate-400">Batch stok tercatat</p>
+							</div>
+							<div class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-slate-400 uppercase">
+									Total Stok Awal
+								</p>
+								<p class="mt-2 text-2xl font-black text-slate-900">
+									{formatNumber(logistik.purchaseSummary?.total_initial_stock ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-slate-400">Akumulasi kuantiti masuk</p>
+							</div>
+							<div class="rounded-[24px] border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-emerald-600 uppercase">
+									Total Stok Saat Ini
+								</p>
+								<p class="mt-2 text-2xl font-black text-emerald-700">
+									{formatNumber(logistik.purchaseSummary?.total_current_stock ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-emerald-500">Sisa stok seluruh batch</p>
+							</div>
+							<div class="rounded-[24px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-amber-600 uppercase">
+									Hampir Kedaluwarsa
+								</p>
+								<p class="mt-2 text-2xl font-black text-amber-700">
+									{formatNumber(logistik.purchaseSummary?.total_near_expiry_batches ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-amber-500">ED dalam 90 hari</p>
+							</div>
+							<div class="rounded-[24px] border border-red-200 bg-red-50 p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-red-600 uppercase">Kedaluwarsa</p>
+								<p class="mt-2 text-2xl font-black text-red-700">
+									{formatNumber(logistik.purchaseSummary?.total_expired_batches ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-red-500">Batch melewati ED</p>
+							</div>
+							<div class="rounded-[24px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+								<p class="text-xs font-bold tracking-wider text-slate-500 uppercase">Batch Kosong</p>
+								<p class="mt-2 text-2xl font-black text-slate-700">
+									{formatNumber(logistik.purchaseSummary?.total_empty_batches ?? 0)}
+								</p>
+								<p class="mt-1 text-xs font-medium text-slate-400">Stok habis</p>
+							</div>
+						</div>
+
 						<div class="rounded-xl border border-slate-200 bg-white">
-							<div class="border-b border-slate-200 px-4 py-3">
+							<div class="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
 								<input
 									type="search"
-									placeholder="Cari produk, referensi, atau batch…"
-									class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+									placeholder="Cari produk, no. batch, atau gudang…"
+									class="min-w-56 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 									bind:value={purchaseSearch}
 									oninput={onPurchaseSearch}
 								/>
+								<select
+									class="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+									bind:value={purchaseWarehouse}
+									onchange={() => {
+										purchasePage = 1;
+										loadPurchases();
+									}}
+								>
+									<option value="ALL">Semua gudang</option>
+									{#each logistik.warehouses as w (w.id)}
+										<option value={w.id}>{w.name}</option>
+									{/each}
+								</select>
+								<select
+									class="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+									bind:value={purchaseStatus}
+									onchange={() => {
+										purchasePage = 1;
+										loadPurchases();
+									}}
+								>
+									<option value="ALL">Semua status</option>
+									{#each Object.entries(STOCK_BATCH_STATUS_LABELS) as [value, label] (value)}
+										<option value={value}>{label}</option>
+									{/each}
+								</select>
 							</div>
 
 							{#if logistik.isLoadingPurchases}
-								<TableSkeleton rows={6} cols={6} />
+								<TableSkeleton rows={6} cols={9} />
 							{:else if logistik.purchaseRows.length === 0}
 								<EmptyState
 									icon="📥"
-									title="Belum ada penerimaan"
-									description="Catat penerimaan barang untuk melihat riwayatnya."
+									title="Belum ada batch stok"
+									description="Catat penerimaan barang untuk melihat daftar batch stok."
 								/>
 							{:else}
 								<div class="overflow-x-auto">
@@ -964,46 +1048,77 @@
 											<tr
 												class="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500"
 											>
-												<th class="px-4 py-2.5 font-medium">Waktu</th>
 												<th class="px-4 py-2.5 font-medium">Produk</th>
 												<th class="px-4 py-2.5 font-medium">Gudang</th>
-												<th class="px-4 py-2.5 font-medium">Batch / ED</th>
-												<th class="px-4 py-2.5 font-medium">Referensi</th>
-												<th class="px-4 py-2.5 text-right font-medium">Masuk</th>
-												<th class="px-4 py-2.5 text-right font-medium">Saldo</th>
+												<th class="px-4 py-2.5 font-medium">No. Batch</th>
+												<th class="px-4 py-2.5 font-medium">Kedaluwarsa</th>
+												<th class="px-4 py-2.5 text-right font-medium">Harga Beli</th>
+												<th class="px-4 py-2.5 text-right font-medium">Stok Awal</th>
+												<th class="px-4 py-2.5 text-right font-medium">Stok Saat Ini</th>
+												<th class="px-4 py-2.5 font-medium">Sisa</th>
+												<th class="px-4 py-2.5 font-medium">Status</th>
 											</tr>
 										</thead>
 										<tbody class="divide-y divide-slate-100">
-											{#each logistik.purchaseRows as log (log.id)}
+											{#each logistik.purchaseRows as batch (batch.id)}
 												<tr class="hover:bg-slate-50">
-													<td class="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
-														{formatDateTime(log.createdAt)}
-													</td>
-													<td class="px-4 py-3 text-slate-700">
-														{logistik.productById(log.product_id)?.name ?? '-'}
-													</td>
-													<td class="px-4 py-3 text-slate-600">
-														{logistik.warehouseById(log.warehouse_id)?.name ?? '-'}
-													</td>
-													<td class="px-4 py-3 text-xs text-slate-500">
-														<p class="font-mono">{log.batch_number ?? '-'}</p>
-														<p>{log.exp_date ?? '-'}</p>
+													<td class="px-4 py-3">
+														<p class="font-medium text-slate-800">
+															{batch.product?.name ?? '-'}
+														</p>
+														<p class="text-xs text-slate-400">
+															{batch.product?.code ?? '-'}{batch.product?.unit
+																? ` · ${batch.product.unit}`
+																: ''}
+														</p>
 													</td>
 													<td class="px-4 py-3">
-														<p class="font-mono text-xs text-slate-600">
-															{log.reference ?? '-'}
-														</p>
-														{#if log.notes}
-															<p class="text-xs text-slate-400">{log.notes}</p>
+														<p class="text-slate-600">{batch.warehouse?.name ?? '-'}</p>
+														{#if batch.warehouse}
+															<p class="text-xs text-slate-400">
+																{WAREHOUSE_TYPE_LABELS[batch.warehouse.type]}
+															</p>
 														{/if}
 													</td>
-													<td
-														class="px-4 py-3 text-right font-medium text-emerald-600"
-													>
-														{formatSigned(log.quantity)}
+													<td class="px-4 py-3 font-mono text-xs text-slate-600">
+														{batch.batch_number ?? '-'}
 													</td>
-													<td class="px-4 py-3 text-right text-slate-700">
-														{formatNumber(log.balance_after)}
+													<td class="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+														{batch.exp_date ? formatDateTime(batch.exp_date) : '-'}
+													</td>
+													<td class="px-4 py-3 text-right text-slate-600">
+														{rupiah(batch.buy_price)}
+													</td>
+													<td class="px-4 py-3 text-right text-slate-600">
+														{formatNumber(batch.initial_stock)}
+													</td>
+													<td class="px-4 py-3 text-right font-medium text-slate-800">
+														{formatNumber(batch.current_stock)}
+													</td>
+													<td class="px-4 py-3">
+														<div class="flex items-center gap-2">
+															<div class="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+																<div
+																	class="h-full rounded-full {batch.remaining_percentage < 25
+																		? 'bg-red-500'
+																		: batch.remaining_percentage < 60
+																			? 'bg-amber-500'
+																			: 'bg-emerald-500'}"
+																	style={`width: ${Math.max(
+																		0,
+																		Math.min(100, batch.remaining_percentage)
+																	)}%`}
+																></div>
+															</div>
+															<span class="text-xs font-medium text-slate-600">
+																{batch.remaining_percentage}%
+															</span>
+														</div>
+													</td>
+													<td class="px-4 py-3">
+														<Badge variant={STOCK_BATCH_STATUS_VARIANTS[batch.status]}>
+															{STOCK_BATCH_STATUS_LABELS[batch.status]}
+														</Badge>
 													</td>
 												</tr>
 											{/each}
@@ -1017,7 +1132,7 @@
 										purchasePage = page;
 										loadPurchases();
 									}}
-									label="penerimaan"
+									label="batch"
 								/>
 							{/if}
 						</div>

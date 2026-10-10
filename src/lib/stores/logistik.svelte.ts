@@ -7,6 +7,7 @@
  *   WarehouseStocks -> sisa stok aktual per produk per warehouse
  *   InventoryLogs   -> ledger audit trail mutasi stok
  *   StockRequests   -> permintaan/amprahan dari unit operasional
+ *   StockBatches    -> batch stok penerimaan (penerimaan/purchasing)
  *
  * Semua fetcher meniru perilaku server (delay, query param, paginasi,
  * meta) sehingga penggantian ke endpoint asli cukup menukar isi fungsi.
@@ -154,6 +155,68 @@ export type InventoryLog = {
 	notes?: string;
 	actor?: string;
 	createdAt: string;
+};
+
+/* ------------------------------------------------------------------ */
+/* Stock Batches (penerimaan / purchasing)                             */
+/* ------------------------------------------------------------------ */
+
+export type StockBatchStatus = 'AVAILABLE' | 'NEAR_EXPIRY' | 'EXPIRED' | 'OUT_OF_STOCK';
+
+export const STOCK_BATCH_STATUS_LABELS: Record<StockBatchStatus, string> = {
+	AVAILABLE: 'Tersedia',
+	NEAR_EXPIRY: 'Hampir ED',
+	EXPIRED: 'Kedaluwarsa',
+	OUT_OF_STOCK: 'Habis'
+};
+
+export const STOCK_BATCH_STATUS_VARIANTS: Record<StockBatchStatus, string> = {
+	AVAILABLE: 'green',
+	NEAR_EXPIRY: 'amber',
+	EXPIRED: 'red',
+	OUT_OF_STOCK: 'slate'
+};
+
+export type StockBatchProduct = {
+	id: string;
+	code: string;
+	name: string;
+	unit: string;
+	category: ProductCategory;
+};
+
+export type StockBatchWarehouse = {
+	id: string;
+	name: string;
+	type: WarehouseType;
+};
+
+export type StockBatch = {
+	id: string;
+	batch_number: string;
+	exp_date: string | null;
+	buy_price: number;
+	initial_stock: number;
+	current_stock: number;
+	/** Sisa stok dalam persen — 100 berarti batch belum tersentuh. */
+	remaining_percentage: number;
+	status: StockBatchStatus;
+	is_empty: boolean;
+	is_expired: boolean;
+	is_near_expiry: boolean;
+	product: StockBatchProduct | null;
+	warehouse: StockBatchWarehouse | null;
+	createdAt?: string;
+	updatedAt?: string;
+};
+
+export type StockBatchSummary = {
+	total_batches: number;
+	total_initial_stock: number;
+	total_current_stock: number;
+	total_expired_batches: number;
+	total_near_expiry_batches: number;
+	total_empty_batches: number;
 };
 
 /* ------------------------------------------------------------------ */
@@ -395,8 +458,10 @@ let stockMatrix = $state<StockMatrixRow[]>([]);
 let logRows = $state<InventoryLog[]>([]);
 let logMeta = $state<MetaPagination | null>(null);
 
-let purchaseRows = $state<InventoryLog[]>([]);
+// Batch stok penerimaan (GET /logistics/stock-batches)
+let purchaseRows = $state<StockBatch[]>([]);
 let purchaseMeta = $state<MetaPagination | null>(null);
+let purchaseSummary = $state<StockBatchSummary | null>(null);
 
 let requestRows = $state<StockRequest[]>([]);
 let requestMeta = $state<MetaPagination | null>(null);
@@ -760,39 +825,111 @@ export async function restockProduct(dto: {
 	}
 }
 
-export async function fetchPurchaseLogs(params?: {
+/* ------------------------------------------------------------------ */
+/* Fetch: Stock Batches (penerimaan)                                   */
+/* ------------------------------------------------------------------ */
+
+type StockBatchListResponse = {
+	statusCode: number;
+	message: string;
+	data: StockBatch[];
+	summary: StockBatchSummary;
+	meta: MetaPagination;
+};
+
+/**
+ * Ambil daftar batch stok dari backend (GET /logistics/stock-batches).
+ * Response memuat `data` (batch ter-mapping), `summary` (agregat) dan `meta`
+ * (paginasi). Perhitungan status kedaluwarsa & sisa stok dilakukan di sini
+ * agar UI cukup mengonsumsi bentuk yang konsisten.
+ */
+export async function fetchStockBatches(params?: {
 	search?: string;
+	warehouse_id?: string;
+	status?: string;
 	page?: number;
 	limit?: number;
-}): Promise<InventoryLog[]> {
+}): Promise<StockBatch[]> {
 	isLoadingPurchases = true;
 	error = null;
 	try {
-		await delay();
-		const q = (params?.search ?? '').trim().toLowerCase();
-		let rows = inventoryLogs.filter((l) => l.type === 'PURCHASE');
-
-		if (q) {
-			rows = rows.filter((l) => {
-				const name = getProduct(l.product_id)?.name.toLowerCase() ?? '';
-				return (
-					name.includes(q) ||
-					(l.reference ?? '').toLowerCase().includes(q) ||
-					(l.batch_number ?? '').toLowerCase().includes(q)
-				);
-			});
+		const query = new URLSearchParams();
+		if (params?.search) query.set('search', params.search);
+		if (params?.warehouse_id && params.warehouse_id !== 'ALL') {
+			query.set('warehouse_id', params.warehouse_id);
 		}
-		rows = [...rows].sort(
-			(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+		if (params?.status && params.status !== 'ALL') {
+			query.set('status', params.status);
+		}
+		if (params?.page) query.set('page', String(params.page));
+		if (params?.limit) query.set('limit', String(params.limit));
+		const qs = query.toString();
+
+		const result = await api.get<StockBatchListResponse>(
+			`/logistics/stock-batches${qs ? `?${qs}` : ''}`
 		);
 
-		const { data, meta } = paginate(rows, params?.page ?? 1, params?.limit ?? 10);
+		const nowDate = new Date();
+		const ninetyDaysFromNow = new Date();
+		ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
+
+		const data = (result.data ?? []).map((batch: any) => {
+			const expDate = batch.exp_date ? new Date(batch.exp_date) : null;
+			const currentStock = Number(batch.current_stock ?? 0);
+			const initialStock = Number(batch.initial_stock ?? 0);
+
+			const isExpired = expDate ? expDate < nowDate : false;
+			const isNearExpiry = expDate ? !isExpired && expDate <= ninetyDaysFromNow : false;
+			const isEmpty = currentStock <= 0;
+
+			return {
+				id: batch.id,
+				batch_number: batch.batch_number,
+				exp_date: batch.exp_date,
+				buy_price: Number(batch.buy_price ?? 0),
+				initial_stock: initialStock,
+				current_stock: currentStock,
+				// Sisa stok dalam persen — 100 berarti batch belum tersentuh.
+				remaining_percentage:
+					initialStock > 0 ? Math.round((currentStock / initialStock) * 100) : 0,
+				status: isEmpty
+					? 'OUT_OF_STOCK'
+					: isExpired
+						? 'EXPIRED'
+						: isNearExpiry
+							? 'NEAR_EXPIRY'
+							: 'AVAILABLE',
+				is_empty: isEmpty,
+				is_expired: isExpired,
+				is_near_expiry: isNearExpiry,
+				product: batch.product
+					? {
+							id: batch.product.id,
+							code: batch.product.code,
+							name: batch.product.name,
+							unit: batch.product.unit,
+							category: batch.product.category
+						}
+					: null,
+				warehouse: batch.warehouse
+					? {
+							id: batch.warehouse.id,
+							name: batch.warehouse.name,
+							type: batch.warehouse.type
+						}
+					: null,
+				createdAt: batch.createdAt,
+				updatedAt: batch.updatedAt
+			} as StockBatch;
+		});
+
 		purchaseRows = data;
-		purchaseMeta = meta;
-		return data;
+		purchaseSummary = result.summary ?? null;
+		purchaseMeta = result.meta ?? null;
+		return purchaseRows;
 	} catch (err) {
 		error = parseError(err);
-		return [];
+		return purchaseRows;
 	} finally {
 		isLoadingPurchases = false;
 	}
@@ -1118,11 +1255,14 @@ export const logistik = {
 	get logMeta(): MetaPagination | null {
 		return logMeta;
 	},
-	get purchaseRows(): InventoryLog[] {
+	get purchaseRows(): StockBatch[] {
 		return purchaseRows;
 	},
 	get purchaseMeta(): MetaPagination | null {
 		return purchaseMeta;
+	},
+	get purchaseSummary(): StockBatchSummary | null {
+		return purchaseSummary;
 	},
 	get requestRows(): StockRequest[] {
 		return requestRows;
@@ -1181,7 +1321,7 @@ export const logistik = {
 	deleteProduct,
 	fetchStockMatrix,
 	restockProduct,
-	fetchPurchaseLogs,
+	fetchStockBatches,
 	fetchInventoryLogs,
 	adjustStock,
 	fetchStockRequests,
