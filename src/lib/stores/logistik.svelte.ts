@@ -13,6 +13,7 @@
  * ========================================================================= */
 
 import type { MetaPagination } from '$lib/stores/user.svelte';
+import { api } from '$lib/api/api';
 
 export type { MetaPagination };
 
@@ -584,7 +585,10 @@ export async function deleteProduct(id: string): Promise<boolean> {
 	isSubmitting = true;
 	error = null;
 	try {
-		await delay(350);
+		// Kirim permintaan hapus ke backend: DELETE /products/{id}
+		await api.delete(`/products/${id}`);
+
+		// Sinkronkan state lokal hanya setelah backend mengonfirmasi.
 		masterProducts = masterProducts.filter((p) => p.id !== id);
 		warehouseStocks = warehouseStocks.filter((s) => s.product_id !== id);
 		return true;
