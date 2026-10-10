@@ -238,7 +238,7 @@
 	});
 
 	function openRestock() {
-		const firstProduct = logistik.products[0];
+		const firstProduct = productStore.products[0];
 		// Gudang tujuan dibatasi pada gudang utama (is_main) saja.
 		restockForm = {
 			product_id: firstProduct?.id ?? '',
