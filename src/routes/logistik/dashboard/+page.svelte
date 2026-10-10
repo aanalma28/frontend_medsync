@@ -256,7 +256,7 @@
 	}
 
 	function onRestockProductChange() {
-		const product = logistik.productById(restockForm.product_id);
+		const product = productStore.products.find((p) => p.id === restockForm.product_id);
 		if (product) restockForm.buy_price = product.buy_price;
 	}
 
@@ -1580,7 +1580,7 @@
 				onchange={onRestockProductChange}
 				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 			>
-				{#each logistik.products as product (product.id)}
+				{#each productStore.products as product (product.id)}
 					<option value={product.id}>{product.name} ({product.code})</option>
 				{/each}
 			</select>
