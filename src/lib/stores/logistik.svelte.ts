@@ -649,7 +649,7 @@ export async function restockProduct(dto: {
 			total_expired_batches: purchaseSummary?.total_expired_batches + (restock.is_expired ? 1 : 0),
 			total_near_expiry_batches: purchaseSummary?.total_near_expiry_batches + (restock.is_near_expiry ? 1 : 0),
 			total_empty_batches: purchaseSummary?.total_empty_batches + (restock.is_empty ? 1 : 0)
-		};
+		};		
 		return purchaseRows;
 	} catch (err) {
 		const message = parseError(err);
@@ -1141,11 +1141,7 @@ export const logistik = {
 	},
 
 	/* Actions */
-	fetchWarehouses,
-	fetchProducts,
-	createProduct,
-	updateProduct,
-	deleteProduct,
+	fetchWarehouses,	
 	fetchStockMatrix,
 	restockProduct,
 	fetchStockBatches,
