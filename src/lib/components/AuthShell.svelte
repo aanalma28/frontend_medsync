@@ -1,8 +1,7 @@
 <script lang="ts">
-	import type { Login, Register, User } from '$lib/types';
-	import { api } from '$lib/api/api';
+	import type { Login, Register } from '$lib/types';
 	import { goto } from '$app/navigation';
-	import { setAuth } from '$lib/stores/auth.svelte';
+	import { login, register } from '$lib/stores/auth.svelte';
 
 	interface Props {
 		title: string;
@@ -139,7 +138,7 @@
 					accepted_terms: userInputs.termsAccepted
 				};
 
-				await api.post('/auth/register', registerData);
+				await register(registerData);
 				alert('Registrasi berhasil! Silakan masuk.');
 				goto('/login');
 			} else {
@@ -149,14 +148,7 @@
 					remember_me: userInputs.rememberMe
 				};
 
-				const result = await api.post<{ data: { accessToken: string; user: User } }>(
-					'/auth/login',
-					loginData
-				);
-				const { accessToken, user } = result.data;
-
-				// Store JWT strictly in memory (never in localStorage/sessionStorage)
-				setAuth(accessToken, user);
+				const user = await login(loginData);
 				// Use goto() for client-side navigation — preserves in-memory JWT
 				// window.location.href would cause a full reload, wiping the memory-only token
 				const dashboardPath =

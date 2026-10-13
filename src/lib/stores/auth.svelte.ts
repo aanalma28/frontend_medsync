@@ -16,7 +16,8 @@
  * - Tab close → memory freed → session recovered on next visit via cookie
  */
 
-import type { User } from '$lib/types';
+import type { Login, Register, User } from '$lib/types';
+import { api } from '$lib/api/api';
 
 /**
  * Reactive auth state using Svelte 5 runes.
@@ -70,14 +71,43 @@ function setLoading(loading: boolean): void {
 }
 
 /**
+ * Authenticate a user and store the returned access token in memory.
+ */
+async function login(credentials: Login): Promise<User> {
+	const result = await api.post<{ data: { accessToken: string; user: User } }>(
+		'/auth/login',
+		credentials
+	);
+	const { accessToken, user: userData } = result.data;
+
+	setAuth(accessToken, userData);
+	return userData;
+}
+
+/**
+ * Register a new patient account.
+ */
+async function register(data: Register): Promise<void> {
+	await api.post('/auth/register', data);
+}
+
+/**
  * Export a reactive auth state object.
  * Components can import and use: `authState.isAuthenticated`, `authState.user`, etc.
  */
 export const authState = {
-	get accessToken() { return accessToken; },
-	get user() { return user; },
-	get isAuthenticated() { return isAuthenticated; },
-	get isLoading() { return isLoading; },
+	get accessToken() {
+		return accessToken;
+	},
+	get user() {
+		return user;
+	},
+	get isAuthenticated() {
+		return isAuthenticated;
+	},
+	get isLoading() {
+		return isLoading;
+	}
 };
 
-export { setAuth, clearAuth, getAccessToken, setLoading };
+export { setAuth, clearAuth, getAccessToken, setLoading, login, register };
