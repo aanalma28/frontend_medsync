@@ -547,7 +547,7 @@ export async function fetchWarehouses(params?: {
 		if (params?.limit) query.set('limit', String(params.limit));
 		const qs = query.toString();
 
-		const result = await api.get<WarehouseListResponse>(`/warehouses${qs ? `?${qs}` : ''}`);
+		const result = await api.get<WarehouseListResponse>(`/logistics/warehouses${qs ? `?${qs}` : ''}`);
 
 		const data = (result.data ?? []).map((w) => ({
 			id: w.id,
