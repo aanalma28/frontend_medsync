@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { LoginData, RegisterData } from '$lib/types';
+	import type { Login, Register, User } from '$lib/types';
+	import { api } from '$lib/api/api';
 	import { goto } from '$app/navigation';
 	import { setAuth } from '$lib/stores/auth.svelte';
 
@@ -79,6 +80,26 @@
 		return new Date().toISOString().split('T')[0];
 	}
 
+	function getBackendErrorMessage(error: unknown, fallback: string): string {
+		if (typeof error !== 'object' || error === null || !('response' in error)) {
+			return fallback;
+		}
+
+		const response = error.response;
+		if (typeof response !== 'object' || response === null || !('message' in response)) {
+			return fallback;
+		}
+
+		const message = response.message;
+		if (Array.isArray(message)) {
+			return (
+				message.filter((item): item is string => typeof item === 'string').join(' • ') || fallback
+			);
+		}
+
+		return typeof message === 'string' ? message : fallback;
+	}
+
 	// Kunci utama: Apakah form valid untuk di-submit?
 	let isFormValid = $derived(
 		isNameValid &&
@@ -106,7 +127,7 @@
 					return;
 				}
 
-				RegisterData.set({
+				const registerData: Register = {
 					role: 'pasien',
 					name: userInputs.fullName,
 					email: userInputs.email,
@@ -116,77 +137,54 @@
 					password: userInputs.password,
 					confirm_password: userInputs.confirmPassword,
 					accepted_terms: userInputs.termsAccepted
-				});
+				};
 
-				const response = await fetch(import.meta.env.VITE_API_URL + '/auth/register', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include',
-					body: JSON.stringify({ ...$RegisterData })
-				});
-
-				if (response.ok) {
-					alert('Registrasi berhasil! Silakan masuk.');
-					goto('/login');
-				} else {
-					// Handling Error Backend 400 (Bad Request dari class-validator)
-					const errorData = await response.json();
-					if (Array.isArray(errorData.message)) {
-						backendError = errorData.message.join(' • '); // Gabungkan array jadi string
-					} else {
-						backendError = errorData.message || 'Terjadi kesalahan validasi server.';
-					}
-				}
+				await api.post('/auth/register', registerData);
+				alert('Registrasi berhasil! Silakan masuk.');
+				goto('/login');
 			} else {
-				LoginData.set({
+				const loginData: Login = {
 					email: userInputs.email,
 					password: userInputs.password,
 					remember_me: userInputs.rememberMe
-				});
+				};
 
-				const response = await fetch(import.meta.env.VITE_API_URL + '/auth/login', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include', // Accept remember_token HttpOnly cookie from backend
-					body: JSON.stringify({ ...$LoginData })
-				});
+				const result = await api.post<{ data: { accessToken: string; user: User } }>(
+					'/auth/login',
+					loginData
+				);
+				const { accessToken, user } = result.data;
 
-				if (response.ok) {
-					// Extract JWT + user from JSON response body
-					const result = await response.json();
-					const { accessToken, user } = result.data;
-					console.log(user);
-
-					// Store JWT strictly in memory (never in localStorage/sessionStorage)
-					setAuth(accessToken, user);
-					// Use goto() for client-side navigation — preserves in-memory JWT
-					// window.location.href would cause a full reload, wiping the memory-only token
-					const dashboardPath =
-						user.role.toLowerCase() === 'patient'
-								? '/pasien/dashboard'
-							: user.role.toLowerCase() === 'general_doctor'
-								? '/doctor/dashboard'
+				// Store JWT strictly in memory (never in localStorage/sessionStorage)
+				setAuth(accessToken, user);
+				// Use goto() for client-side navigation — preserves in-memory JWT
+				// window.location.href would cause a full reload, wiping the memory-only token
+				const dashboardPath =
+					user.role.toLowerCase() === 'patient'
+						? '/pasien/dashboard'
+						: user.role.toLowerCase() === 'general_doctor'
+							? '/doctor/dashboard'
 							: user.role.toLowerCase() === 'pharmacist'
 								? '/apoteker/dashboard'
-							: user.role.toLowerCase() === 'admin'
-								? '/admin/dashboard'
-							: user.role.toLowerCase() === 'superadmin'
-								? '/superadmin/dashboard'
-							: user.role.toLowerCase() === 'nurse'
-								? '/nurse/dashboard'
-							: user.role.toLowerCase() === 'logistic' 
-								? '/logistik/dashboard'
-							: user.role.toLowerCase() === 'logistik'
-								? '/logistik/dashboard'
-							: '/login';
-					goto(dashboardPath);
-				} else {
-					const errorData = await response.json();
-					backendError = errorData.message || 'Email atau kata sandi salah.';
-				}
+								: user.role.toLowerCase() === 'admin'
+									? '/admin/dashboard'
+									: user.role.toLowerCase() === 'superadmin'
+										? '/superadmin/dashboard'
+										: user.role.toLowerCase() === 'nurse'
+											? '/nurse/dashboard'
+											: user.role.toLowerCase() === 'logistic' ||
+												  user.role.toLowerCase() === 'logistik'
+												? '/logistik/dashboard'
+												: '/login';
+				goto(dashboardPath);
 			}
 		} catch (error) {
-			backendError = 'Gagal terhubung ke server. Pastikan backend menyala.';
+			backendError = getBackendErrorMessage(
+				error,
+				isRegister
+					? 'Terjadi kesalahan validasi server atau koneksi.'
+					: 'Gagal terhubung ke server. Pastikan backend menyala.'
+			);
 		} finally {
 			isSubmitting = false;
 		}

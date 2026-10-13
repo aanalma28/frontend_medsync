@@ -157,7 +157,8 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 	let response = await fetch(url, fetchOptions);
 
 	// ─── 401 Interceptor: Auto-Refresh ─────────────────────────────────────────
-	if (response.status === 401) {
+	const isPublicAuthRequest = path === '/auth/login' || path === '/auth/register';
+	if (response.status === 401 && !isPublicAuthRequest) {
 		const refreshed = await refreshWithMutex();
 
 		if (refreshed) {
