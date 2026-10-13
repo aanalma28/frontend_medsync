@@ -264,6 +264,14 @@ export type StockRequest = {
 	items: StockRequestItem[];
 };
 
+type StockBatchListResponse = {
+	statusCode: number;
+	message: string;
+	data: StockBatch[];
+	summary: StockBatchSummary;
+	meta: MetaPagination;
+};
+
 /* ------------------------------------------------------------------ */
 /* Util                                                                */
 /* ------------------------------------------------------------------ */
@@ -479,10 +487,6 @@ let error = $state<string | null>(null);
 /* Internal helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function getProduct(id: string): Product | undefined {
-	return masterProducts.find((p) => p.id === id);
-}
-
 function getWarehouse(id: string): Warehouse | undefined {
 	return warehouses.find((w) => w.id === id);
 }
@@ -568,160 +572,6 @@ export async function fetchWarehouses(params?: {
 }
 
 /* ------------------------------------------------------------------ */
-/* Fetch: Products                                                     */
-/* ------------------------------------------------------------------ */
-
-export async function fetchProducts(params?: {
-	search?: string;
-	category?: string;
-	page?: number;
-	limit?: number;
-}): Promise<Product[]> {
-	isLoadingProducts = true;
-	error = null;
-	try {
-		await delay();
-		const q = (params?.search ?? '').trim().toLowerCase();
-		let rows = [...masterProducts];
-
-		if (q) {
-			rows = rows.filter(
-				(p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
-			);
-		}
-		if (params?.category && params.category !== 'ALL') {
-			rows = rows.filter((p) => p.category === params.category);
-		}
-		rows.sort((a, b) => a.name.localeCompare(b.name));
-
-		const { data, meta } = paginate(rows, params?.page ?? 1, params?.limit ?? 10);
-		productRows = data;
-		productMeta = meta;
-		return data;
-	} catch (err) {
-		error = parseError(err);
-		return [];
-	} finally {
-		isLoadingProducts = false;
-	}
-}
-
-export async function createProduct(dto: {
-	code: string;
-	name: string;
-	category: ProductCategory;
-	unit: string;
-	min_stock: number;
-	buy_price: number;
-	sell_price: number;
-	description?: string;
-}): Promise<Product> {
-	isSubmitting = true;
-	error = null;
-	try {
-		await delay(350);
-		if (masterProducts.some((p) => p.code.toLowerCase() === dto.code.trim().toLowerCase())) {
-			throw new Error(`Kode produk "${dto.code}" sudah digunakan`);
-		}
-		const product: Product = {
-			id: uid('prd'),
-			code: dto.code.trim(),
-			name: dto.name.trim(),
-			category: dto.category,
-			unit: dto.unit.trim(),
-			description: dto.description?.trim() || undefined,
-			min_stock: Number(dto.min_stock) || 0,
-			buy_price: Number(dto.buy_price) || 0,
-			sell_price: Number(dto.sell_price) || 0,
-			createdAt: now(),
-			updatedAt: now()
-		};
-		masterProducts = [product, ...masterProducts];
-		for (const w of warehouses) {
-			warehouseStocks.push({
-				id: uid('wst'),
-				warehouse_id: w.id,
-				product_id: product.id,
-				stock: 0,
-				updatedAt: now()
-			});
-		}
-		return product;
-	} catch (err) {
-		const message = parseError(err);
-		error = message;
-		throw new Error(message);
-	} finally {
-		isSubmitting = false;
-	}
-}
-
-export async function updateProduct(
-	id: string,
-	dto: Partial<{
-		code: string;
-		name: string;
-		category: ProductCategory;
-		unit: string;
-		min_stock: number;
-		buy_price: number;
-		sell_price: number;
-		description: string;
-	}>
-): Promise<Product> {
-	isSubmitting = true;
-	error = null;
-	try {
-		await delay(350);
-		const product = getProduct(id);
-		if (!product) throw new Error('Produk tidak ditemukan');
-
-		if (dto.code && dto.code.trim().toLowerCase() !== product.code.toLowerCase()) {
-			if (masterProducts.some((p) => p.id !== id && p.code.toLowerCase() === dto.code!.trim().toLowerCase())) {
-				throw new Error(`Kode produk "${dto.code}" sudah digunakan`);
-			}
-		}
-
-		Object.assign(product, {
-			...dto,
-			code: dto.code?.trim() ?? product.code,
-			name: dto.name?.trim() ?? product.name,
-			min_stock: dto.min_stock !== undefined ? Number(dto.min_stock) : product.min_stock,
-			buy_price: dto.buy_price !== undefined ? Number(dto.buy_price) : product.buy_price,
-			sell_price: dto.sell_price !== undefined ? Number(dto.sell_price) : product.sell_price,
-			updatedAt: now()
-		});
-		return product;
-	} catch (err) {
-		const message = parseError(err);
-		error = message;
-		throw new Error(message);
-	} finally {
-		isSubmitting = false;
-	}
-}
-
-export async function deleteProduct(id: string): Promise<boolean> {
-	isSubmitting = true;
-	error = null;
-	try {
-		// Kirim permintaan hapus ke backend: DELETE /products/{id}
-		await api.delete(`/products/${id}`);
-
-		// Sinkronkan state lokal hanya setelah backend mengonfirmasi.
-		masterProducts = masterProducts.filter((p) => p.id !== id);
-		warehouseStocks = warehouseStocks.filter((s) => s.product_id !== id);
-		return true;
-	} catch (err) {
-		const message = parseError(err);
-		error = message;
-		throw new Error(message);
-	} finally {
-		isSubmitting = false;
-	}
-}
-
-/* ------------------------------------------------------------------ */
 /* Fetch: Stock matrix & low stock                                     */
 /* ------------------------------------------------------------------ */
 
@@ -782,40 +632,25 @@ export async function restockProduct(dto: {
 	reference_number?: string;
 	supplier_name?: string;
 	notes?: string;
-}): Promise<InventoryLog> {
+}): Promise<StockBatch[]> {
 	isSubmitting = true;
 	error = null;
 	try {
-		await delay(520);
-		const product = getProduct(dto.product_id);
-		if (!product) throw new Error('Produk tidak ditemukan');
+		await delay(520);				
 		if (Number(dto.quantity) <= 0) throw new Error('Kuantiti harus lebih dari 0');
 
-		const row = ensureStockRow(dto.warehouse_id, dto.product_id);
-		row.stock += Number(dto.quantity);
-		row.updatedAt = now();
+		const restock = await api.post<StockBatchListResponse>('/logistics/purchases', dto);
 
-		product.buy_price = Number(dto.buy_price) || product.buy_price;
-		product.updatedAt = now();
-
-		const log: InventoryLog = {
-			id: uid('log'),
-			product_id: dto.product_id,
-			warehouse_id: dto.warehouse_id,
-			type: 'PURCHASE',
-			quantity: Number(dto.quantity),
-			balance_after: row.stock,
-			reference: dto.reference_number?.trim() || undefined,
-			batch_number: dto.batch_number?.trim() || undefined,
-			exp_date: dto.exp_date || null,
-			notes:
-				dto.notes?.trim() ||
-				(dto.supplier_name ? `Supplier: ${dto.supplier_name.trim()}` : undefined),
-			actor: 'Petugas Logistik',
-			createdAt: now()
+		purchaseRows = {...purchaseRows, ...restock.data};				
+		purchaseSummary = {
+			total_batches: purchaseSummary?.total_batches + 1,
+			total_initial_stock: purchaseSummary?.total_initial_stock + restock.initial_stock,
+			total_current_stock: purchaseSummary?.total_current_stock + restock.current_stock,
+			total_expired_batches: purchaseSummary?.total_expired_batches + (restock.is_expired ? 1 : 0),
+			total_near_expiry_batches: purchaseSummary?.total_near_expiry_batches + (restock.is_near_expiry ? 1 : 0),
+			total_empty_batches: purchaseSummary?.total_empty_batches + (restock.is_empty ? 1 : 0)
 		};
-		inventoryLogs = [log, ...inventoryLogs];
-		return log;
+		return purchaseRows;
 	} catch (err) {
 		const message = parseError(err);
 		error = message;
@@ -828,14 +663,6 @@ export async function restockProduct(dto: {
 /* ------------------------------------------------------------------ */
 /* Fetch: Stock Batches (penerimaan)                                   */
 /* ------------------------------------------------------------------ */
-
-type StockBatchListResponse = {
-	statusCode: number;
-	message: string;
-	data: StockBatch[];
-	summary: StockBatchSummary;
-	meta: MetaPagination;
-};
 
 /**
  * Ambil daftar batch stok dari backend (GET /logistics/stock-batches).
