@@ -15,6 +15,7 @@
 
 import type { MetaPagination } from '$lib/stores/user.svelte';
 import { api } from '$lib/api/api';
+import { productStore } from './product.svelte';
 
 export type { MetaPagination };
 
@@ -491,6 +492,10 @@ function getWarehouse(id: string): Warehouse | undefined {
 	return warehouses.find((w) => w.id === id);
 }
 
+function getProduct(id: string): Product | undefined {
+	return productStore.products.find((p) => p.id === id);
+}
+
 function getStock(warehouseId: string, productId: string): number {
 	return (
 		warehouseStocks.find((s) => s.warehouse_id === warehouseId && s.product_id === productId)?.stock ?? 0
@@ -547,7 +552,7 @@ export async function fetchWarehouses(params?: {
 		if (params?.limit) query.set('limit', String(params.limit));
 		const qs = query.toString();
 
-		const result = await api.get<WarehouseListResponse>(`/logistics/warehouses${qs ? `?${qs}` : ''}`);
+		const result = await api.get<WarehouseListResponse>(`/warehouses${qs ? `?${qs}` : ''}`);
 
 		const data = (result.data ?? []).map((w) => ({
 			id: w.id,
