@@ -183,7 +183,7 @@ export type StockBatchProduct = {
 	code: string;
 	name: string;
 	unit: string;
-	category: ProductCategory;
+	category?: ProductCategory;
 };
 
 export type StockBatchWarehouse = {
@@ -271,6 +271,27 @@ type StockBatchListResponse = {
 	data: StockBatch[];
 	summary: StockBatchSummary;
 	meta: MetaPagination;
+};
+
+type PurchaseCreateResponse = {
+	statusCode: number;
+	message: string;
+	data: {
+		warehouse: StockBatchWarehouse;
+		processedItems: {
+			id: string | null;
+			batch_number: string | null;
+			exp_date: string | null;
+			buy_price: number;
+			initial_stock: number;
+			current_stock: number;
+			remaining_percentage: number;
+			product_id: string;
+			product_code: string;
+			product_name: string;
+			unit: string;
+		}[];
+	};
 };
 
 /* ------------------------------------------------------------------ */
@@ -628,34 +649,118 @@ export async function fetchStockMatrix(params?: {
 /* ------------------------------------------------------------------ */
 
 export async function restockProduct(dto: {
-	product_id: string;
 	warehouse_id: string;
-	quantity: number;
-	buy_price: number;
-	batch_number?: string;
-	exp_date?: string;
 	reference_number?: string;
 	supplier_name?: string;
 	notes?: string;
-}): Promise<StockBatch[]> {
+	items: {
+		product_id: string;
+		quantity: number;
+		buy_price: number;
+		batch_number?: string;
+		exp_date?: string;
+	}[];
+}): Promise<PurchaseCreateResponse> {
 	isSubmitting = true;
 	error = null;
 	try {
-		await delay(520);				
-		if (Number(dto.quantity) <= 0) throw new Error('Kuantiti harus lebih dari 0');
+		if (dto.items.length === 0) throw new Error('Minimal satu barang harus ditambahkan');
+		if (
+			dto.items.some(
+				(item) => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0
+			)
+		) {
+			throw new Error('Kuantiti harus lebih dari 0');
+		}
 
-		const restock = await api.post<StockBatchListResponse>('/logistics/purchases', dto);
+		const response = await api.post<PurchaseCreateResponse>('/logistics/purchases', dto);
+		const nowTimestamp = Date.now();
+		const ninetyDaysFromNow = nowTimestamp + 90 * 24 * 60 * 60 * 1000;
 
-		purchaseRows = {...purchaseRows, ...restock.data};				
-		purchaseSummary = {
-			total_batches: purchaseSummary?.total_batches + 1,
-			total_initial_stock: purchaseSummary?.total_initial_stock + restock.initial_stock,
-			total_current_stock: purchaseSummary?.total_current_stock + restock.current_stock,
-			total_expired_batches: purchaseSummary?.total_expired_batches + (restock.is_expired ? 1 : 0),
-			total_near_expiry_batches: purchaseSummary?.total_near_expiry_batches + (restock.is_near_expiry ? 1 : 0),
-			total_empty_batches: purchaseSummary?.total_empty_batches + (restock.is_empty ? 1 : 0)
-		};		
-		return purchaseRows;
+		for (const item of response.data.processedItems) {
+			if (!item.id || !item.batch_number) continue;
+
+			const existingIndex = purchaseRows.findIndex((batch) => batch.id === item.id);
+			const existingBatch = existingIndex >= 0 ? purchaseRows[existingIndex] : undefined;
+			const initialStock = (existingBatch?.initial_stock ?? 0) + Number(item.initial_stock);
+			const currentStock = (existingBatch?.current_stock ?? 0) + Number(item.initial_stock);
+			const expDate = item.exp_date;
+			const expTimestamp = expDate ? Date.parse(expDate) : Number.NaN;
+			const hasValidExpDate = Number.isFinite(expTimestamp);
+			const isExpired = hasValidExpDate ? expTimestamp < nowTimestamp : false;
+			const isNearExpiry = hasValidExpDate
+				? !isExpired && expTimestamp <= ninetyDaysFromNow
+				: false;
+			const isEmpty = currentStock <= 0;
+			const catalogProduct = productStore.catalog.find(
+				(product) => product.id === item.product_id
+			);
+			const batch: StockBatch = {
+				id: item.id,
+				batch_number: item.batch_number,
+				exp_date: expDate,
+				buy_price: Number(item.buy_price ?? 0),
+				initial_stock: initialStock,
+				current_stock: currentStock,
+				remaining_percentage:
+					initialStock > 0 ? Math.round((currentStock / initialStock) * 100) : 0,
+				status: isEmpty
+					? 'OUT_OF_STOCK'
+					: isExpired
+						? 'EXPIRED'
+						: isNearExpiry
+							? 'NEAR_EXPIRY'
+							: 'AVAILABLE',
+				is_empty: isEmpty,
+				is_expired: isExpired,
+				is_near_expiry: isNearExpiry,
+				product: {
+					id: item.product_id,
+					code: item.product_code,
+					name: item.product_name,
+					unit: item.unit,
+					...(catalogProduct && { category: catalogProduct.category })
+				},
+				warehouse: response.data.warehouse
+			};
+
+			if (existingIndex >= 0) {
+				purchaseRows[existingIndex] = batch;
+			} else {
+				purchaseRows = [batch, ...purchaseRows];
+			}
+
+			if (purchaseSummary) {
+				const batchCountDelta = existingBatch ? 0 : 1;
+				purchaseSummary = {
+					total_batches: purchaseSummary.total_batches + batchCountDelta,
+					total_initial_stock:
+						purchaseSummary.total_initial_stock +
+						(initialStock - (existingBatch?.initial_stock ?? 0)),
+					total_current_stock:
+						purchaseSummary.total_current_stock +
+						(currentStock - (existingBatch?.current_stock ?? 0)),
+					total_expired_batches:
+						purchaseSummary.total_expired_batches +
+						Number(isExpired) -
+						Number(existingBatch?.is_expired ?? false),
+					total_near_expiry_batches:
+						purchaseSummary.total_near_expiry_batches +
+						Number(isNearExpiry) -
+						Number(existingBatch?.is_near_expiry ?? false),
+					total_empty_batches:
+						purchaseSummary.total_empty_batches +
+						Number(isEmpty) -
+						Number(existingBatch?.is_empty ?? false)
+				};
+			}
+
+			if (purchaseMeta && !existingBatch) {
+				purchaseMeta = { ...purchaseMeta, total: purchaseMeta.total + 1 };
+			}
+		}
+
+		return response;
 	} catch (err) {
 		const message = parseError(err);
 		error = message;

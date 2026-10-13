@@ -232,57 +232,101 @@
 	let restockOpen = $state(false);
 	let restockError = $state('');
 	let restockForm = $state({
-		product_id: '',
 		warehouse_id: '',
-		quantity: 0,
-		buy_price: 0,
-		batch_number: '',
-		exp_date: '',
-		reference_number: '',
 		supplier_name: '',
-		notes: ''
+		reference_number: '',
+		notes: '',
+		items: [] as {
+			product_id: string;
+			quantity: number;
+			buy_price: number;
+			batch_number: string;
+			exp_date: string;
+		}[]
 	});
 
 	function openRestock() {
 		const firstProduct = productStore.products[0];
 		// Gudang tujuan dibatasi pada gudang utama (is_main) saja.
 		restockForm = {
-			product_id: firstProduct?.id ?? '',
 			warehouse_id: mainWarehouses[0]?.id ?? '',
-			quantity: 0,
-			buy_price: firstProduct?.buy_price ?? 0,
-			batch_number: '',
-			exp_date: '',
-			reference_number: '',
 			supplier_name: '',
-			notes: ''
+			reference_number: '',
+			notes: '',
+			items: [
+				{
+					product_id: firstProduct?.id ?? '',
+					quantity: 0,
+					buy_price: firstProduct?.buy_price ?? 0,
+					batch_number: '',
+					exp_date: ''
+				}
+			]
 		};
 		restockError = '';
 		restockOpen = true;
 	}
 
-	function onRestockProductChange() {
-		const product = productStore.products.find((p) => p.id === restockForm.product_id);
-		if (product) restockForm.buy_price = product.buy_price;
+	function addRestockItem() {
+		const firstProduct = productStore.products[0];
+		restockForm.items = [
+			...restockForm.items,
+			{
+				product_id: firstProduct?.id ?? '',
+				quantity: 0,
+				buy_price: firstProduct?.buy_price ?? 0,
+				batch_number: '',
+				exp_date: ''
+			}
+		];
+		restockError = '';
+	}
+
+	function removeRestockItem(index: number) {
+		if (restockForm.items.length <= 1) return;
+		restockForm.items = restockForm.items.filter((_, itemIndex) => itemIndex !== index);
+		restockError = '';
+	}
+
+	function onRestockProductChange(item: (typeof restockForm.items)[number]) {
+		const product = productStore.products.find((p) => p.id === item.product_id);
+		if (product) item.buy_price = product.buy_price;
 	}
 
 	async function submitRestock() {
 		restockError = '';
-		if (!restockForm.product_id) {
-			restockError = 'Produk wajib dipilih.';
-			return;
-		}
 		if (!restockForm.warehouse_id) {
 			restockError = 'Gudang tujuan wajib dipilih.';
 			return;
 		}
-		if (Number(restockForm.quantity) <= 0) {
-			restockError = 'Kuantiti penerimaan harus lebih dari 0.';
+		if (restockForm.items.length === 0) {
+			restockError = 'Minimal satu barang harus ditambahkan.';
+			return;
+		}
+		const invalidProductIndex = restockForm.items.findIndex((item) => !item.product_id);
+		if (invalidProductIndex !== -1) {
+			restockError = `Produk pada barang ke-${invalidProductIndex + 1} wajib dipilih.`;
+			return;
+		}
+		const invalidQuantityIndex = restockForm.items.findIndex(
+			(item) => !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0
+		);
+		if (invalidQuantityIndex !== -1) {
+			restockError = `Kuantiti barang ke-${invalidQuantityIndex + 1} harus lebih dari 0.`;
 			return;
 		}
 		try {
-			await logistik.restockProduct({ ...restockForm });
-			toast.success('Penerimaan dicatat', 'Stok berhasil ditambahkan ke gudang tujuan.');
+			await logistik.restockProduct({
+				warehouse_id: restockForm.warehouse_id,
+				supplier_name: restockForm.supplier_name,
+				reference_number: restockForm.reference_number,
+				notes: restockForm.notes,
+				items: restockForm.items
+			});
+			toast.success(
+				'Penerimaan dicatat',
+				`${restockForm.items.length} barang berhasil ditambahkan ke gudang tujuan.`
+			);
 			restockOpen = false;
 			await loadPurchases();
 			await loadOverview();
@@ -1677,8 +1721,8 @@
 <Modal
 	open={restockOpen}
 	title="Catat Penerimaan Barang"
-	description="Input stok masuk dari supplier ke gudang utama."
-	size="md"
+	description="Input satu atau beberapa barang dari supplier yang sama ke gudang utama."
+	size="lg"
 	onclose={() => (restockOpen = false)}
 >
 	{#if restockError}
@@ -1688,17 +1732,33 @@
 	{/if}
 
 	<div class="grid gap-4">
+		<div class="grid gap-4 sm:grid-cols-2">
+			<label class="block">
+				<span class="text-xs font-medium text-slate-600">Supplier</span>
+				<input
+					bind:value={restockForm.supplier_name}
+					placeholder="PT Kimia Farma Trading"
+					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+				/>
+			</label>
+			<label class="block">
+				<span class="text-xs font-medium text-slate-600">No. Referensi (PO/Surat Jalan)</span>
+				<input
+					bind:value={restockForm.reference_number}
+					placeholder="PO-2024-0091"
+					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+				/>
+			</label>
+		</div>
+
 		<label class="block">
-			<span class="text-xs font-medium text-slate-600">Produk *</span>
-			<select
-				bind:value={restockForm.product_id}
-				onchange={onRestockProductChange}
-				class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-			>
-				{#each productStore.products as product (product.id)}
-					<option value={product.id}>{product.name} ({product.code})</option>
-				{/each}
-			</select>
+			<span class="text-xs font-medium text-slate-600">Catatan</span>
+			<textarea
+				rows="2"
+				bind:value={restockForm.notes}
+				placeholder="Catatan tambahan (opsional)"
+				class="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+			></textarea>
 		</label>
 
 		<label class="block">
@@ -1722,74 +1782,92 @@
 			</span>
 		</label>
 
-		<div class="grid gap-4 sm:grid-cols-2">
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">Kuantiti Masuk *</span>
-				<input
-					type="number"
-					min="1"
-					bind:value={restockForm.quantity}
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">Harga Beli Satuan</span>
-				<input
-					type="number"
-					min="0"
-					bind:value={restockForm.buy_price}
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-		</div>
+		<div class="space-y-3 border-t border-slate-100 pt-4">
+			<div class="flex items-center justify-between gap-3">
+			<div>
+				<h3 class="text-sm font-semibold text-slate-800">Daftar Barang</h3>
+				<p class="mt-0.5 text-xs text-slate-500">
+					Setiap barang dapat memiliki kuantiti, harga, dan batch berbeda.
+				</p>
+			</div>
+			<button
+				type="button"
+				class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+				onclick={addRestockItem}
+			>
+				+ Tambah Barang
+			</button>
+			</div>
 
-		<div class="grid gap-4 sm:grid-cols-2">
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">No. Batch</span>
-				<input
-					bind:value={restockForm.batch_number}
-					placeholder="B2401-01"
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">Kedaluwarsa (Exp. Date)</span>
-				<input
-					type="date"
-					bind:value={restockForm.exp_date}
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-		</div>
+			{#each restockForm.items as item, index (index)}
+			<div class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+				<div class="flex items-center justify-between gap-3">
+					<p class="text-xs font-semibold text-slate-700">Barang {index + 1}</p>
+					<button
+						type="button"
+						class="text-xs font-medium text-red-600 transition hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
+						disabled={restockForm.items.length <= 1}
+						onclick={() => removeRestockItem(index)}
+					>
+						Hapus
+					</button>
+				</div>
 
-		<div class="grid gap-4 sm:grid-cols-2">
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">No. Referensi (PO/Surat Jalan)</span>
-				<input
-					bind:value={restockForm.reference_number}
-					placeholder="PO-2024-0091"
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-			<label class="block">
-				<span class="text-xs font-medium text-slate-600">Supplier</span>
-				<input
-					bind:value={restockForm.supplier_name}
-					placeholder="PT Kimia Farma Trading"
-					class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-				/>
-			</label>
-		</div>
+				<label class="block">
+					<span class="text-xs font-medium text-slate-600">Produk *</span>
+					<select
+						bind:value={item.product_id}
+						onchange={() => onRestockProductChange(item)}
+						class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+					>
+						{#each productStore.products as product (product.id)}
+							<option value={product.id}>{product.name} ({product.code})</option>
+						{/each}
+					</select>
+				</label>
 
-		<label class="block">
-			<span class="text-xs font-medium text-slate-600">Catatan</span>
-			<textarea
-				rows="2"
-				bind:value={restockForm.notes}
-				placeholder="Catatan tambahan (opsional)"
-				class="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-			></textarea>
-		</label>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<label class="block">
+						<span class="text-xs font-medium text-slate-600">Kuantiti Masuk *</span>
+						<input
+							type="number"
+							min="1"
+							bind:value={item.quantity}
+							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+						/>
+					</label>
+					<label class="block">
+						<span class="text-xs font-medium text-slate-600">Harga Beli Satuan</span>
+						<input
+							type="number"
+							min="0"
+							bind:value={item.buy_price}
+							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+						/>
+					</label>
+				</div>
+
+				<div class="grid gap-3 sm:grid-cols-2">
+					<label class="block">
+						<span class="text-xs font-medium text-slate-600">No. Batch</span>
+						<input
+							bind:value={item.batch_number}
+							placeholder="B2401-01"
+							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+						/>
+					</label>
+					<label class="block">
+						<span class="text-xs font-medium text-slate-600">Kedaluwarsa (Exp. Date)</span>
+						<input
+							type="date"
+							bind:value={item.exp_date}
+							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+						/>
+					</label>
+				</div>
+			</div>
+			{/each}
+		</div>
 	</div>
 
 	{#snippet footer()}
