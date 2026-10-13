@@ -16,6 +16,14 @@ export interface User {
     createdAt?: string;
 }
 
+export interface AuthResponse {
+    data: {
+        accessToken: string;
+        csrfToken: string;
+        user: User;
+    };
+}
+
 export interface Login {
     email: string;
     password: string;

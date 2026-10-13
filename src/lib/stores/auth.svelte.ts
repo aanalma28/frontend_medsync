@@ -2,7 +2,7 @@
  * Auth Store — In-memory JWT storage using Svelte 5 $state runes.
  *
  * SECURITY: The access token is stored STRICTLY in memory (JavaScript variable).
- * It is never written to localStorage, sessionStorage, or cookies.
+ * The access token and CSRF token are never written to persistent browser storage.
  * This eliminates XSS-based token theft from persistent browser storage.
  *
  * The remember_me opaque token lives as an HttpOnly cookie (set by the backend)
@@ -10,13 +10,13 @@
  * The frontend never reads or writes this cookie — it's invisible to JavaScript.
  *
  * Lifecycle:
- * - Login → setAuth(token, user) → stored in memory
- * - Page reload → JWT lost → auto-recovered via POST /auth/refresh (cookie)
- * - Logout → clearAuth() → memory wiped, backend clears cookie
+ * - Login → setAuth(token, csrfToken, user) → stored in memory
+ * - Page reload → tokens lost → recovered via POST /auth/refresh (cookie)
+ * - Logout → clearAuth() → memory wiped, backend clears cookies
  * - Tab close → memory freed → session recovered on next visit via cookie
  */
 
-import type { Login, Register, User } from '$lib/types';
+import type { AuthResponse, Login, Register, User } from '$lib/types';
 import { api } from '$lib/api/api';
 
 /**
@@ -24,6 +24,7 @@ import { api } from '$lib/api/api';
  * All components that reference these properties will re-render on change.
  */
 let accessToken = $state<string | null>(null);
+let csrfToken = $state<string | null>(null);
 let user = $state<User | null>(null);
 let isLoading = $state<boolean>(true);
 
@@ -38,8 +39,9 @@ let isAuthenticated = $derived<boolean>(!!accessToken && !!user);
  * @param token - The JWT access token from the backend JSON response
  * @param userData - The user profile object from the backend
  */
-function setAuth(token: string, userData: User): void {
+function setAuth(token: string, csrfTokenValue: string, userData: User): void {
 	accessToken = token;
+	csrfToken = csrfTokenValue;
 	user = userData;
 	isLoading = false;
 }
@@ -50,6 +52,7 @@ function setAuth(token: string, userData: User): void {
  */
 function clearAuth(): void {
 	accessToken = null;
+	csrfToken = null;
 	user = null;
 	isLoading = false;
 }
@@ -64,6 +67,13 @@ function getAccessToken(): string | null {
 }
 
 /**
+ * Get the current in-memory CSRF token for mutating API requests.
+ */
+function getCsrfToken(): string | null {
+	return csrfToken;
+}
+
+/**
  * Set the loading state — used during initial session validation on page mount.
  */
 function setLoading(loading: boolean): void {
@@ -74,13 +84,24 @@ function setLoading(loading: boolean): void {
  * Authenticate a user and store the returned access token in memory.
  */
 async function login(credentials: Login): Promise<User> {
-	const result = await api.post<{ data: { accessToken: string; user: User } }>(
-		'/auth/login',
-		credentials
-	);
-	const { accessToken, user: userData } = result.data;
+	const result = await api.post<AuthResponse>('/auth/login', credentials);
+	const authData = result?.data;
+	const accessToken = authData?.accessToken;
+	const csrfTokenValue = authData?.csrfToken;
+	const userData = authData?.user;
 
-	setAuth(accessToken, userData);
+	if (
+		typeof accessToken !== 'string' ||
+		!accessToken ||
+		typeof csrfTokenValue !== 'string' ||
+		!csrfTokenValue ||
+		typeof userData !== 'object' ||
+		userData === null
+	) {
+		throw new Error('Login response did not include a valid access token, CSRF token, and user.');
+	}
+
+	setAuth(accessToken, csrfTokenValue, userData);
 	return userData;
 }
 
@@ -99,6 +120,9 @@ export const authState = {
 	get accessToken() {
 		return accessToken;
 	},
+	get csrfToken() {
+		return csrfToken;
+	},
 	get user() {
 		return user;
 	},
@@ -110,4 +134,4 @@ export const authState = {
 	}
 };
 
-export { setAuth, clearAuth, getAccessToken, setLoading, login, register };
+export { setAuth, clearAuth, getAccessToken, getCsrfToken, setLoading, login, register };

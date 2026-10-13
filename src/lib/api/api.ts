@@ -8,7 +8,7 @@
  * 3. RESPONSE INTERCEPTOR: On 401 → calls POST /auth/refresh → updates memory JWT → retries
  * 4. MUTEX LOCK: Prevents parallel refresh storms — only one refresh at a time,
  *    subsequent 401s queue up and replay with the new token
- * 5. CSRF: Reads `csrf_token` cookie and sends it as `X-CSRF-Token` header on mutating requests
+ * 5. CSRF: Reads the in-memory CSRF token and sends it as `X-CSRF-Token` on mutating requests
  *
  * Usage:
  *   import { api } from '$lib/api/api';
@@ -19,8 +19,8 @@
 import { browser } from '$app/environment';
 import { error, redirect } from '@sveltejs/kit';
 import { goto } from '$app/navigation';
-import { getAccessToken, setAuth, clearAuth } from '$lib/stores/auth.svelte';
-import type { User } from '$lib/types';
+import { getAccessToken, getCsrfToken, setAuth, clearAuth } from '$lib/stores/auth.svelte';
+import type { AuthResponse } from '$lib/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -31,25 +31,13 @@ let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
 /**
- * Read a non-HttpOnly cookie value by name.
- * Used to read the `csrf_token` cookie for the double-submit CSRF pattern.
- */
-function readCookie(name: string): string {
-	if (!browser || typeof document === 'undefined') return '';
-	const match = document.cookie
-		.split(';')
-		.map((c) => c.trim())
-		.find((c) => c.startsWith(`${name}=`));
-	return match ? decodeURIComponent(match.substring(name.length + 1)) : '';
-}
-
-/**
  * Build request headers with JWT + CSRF token injection.
  *
  * @param method - HTTP method (determines whether CSRF token is attached)
+ * @param path - API path (login and registration are allowed without a CSRF token)
  * @param customHeaders - Additional headers from the caller
  */
-function buildHeaders(method: string, customHeaders?: HeadersInit): Headers {
+function buildHeaders(method: string, path: string, customHeaders?: HeadersInit): Headers {
 	const headers = new Headers(customHeaders);
 
 	// Always set JSON content type unless caller explicitly set something else
@@ -66,9 +54,13 @@ function buildHeaders(method: string, customHeaders?: HeadersInit): Headers {
 	// Inject CSRF token on mutating methods (double-submit cookie pattern)
 	const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
 	if (mutatingMethods.includes(method.toUpperCase())) {
-		const csrfToken = readCookie('csrf_token');
+		const csrfToken = getCsrfToken();
 		if (csrfToken) {
 			headers.set('X-CSRF-Token', csrfToken);
+		} else if (path !== '/auth/login' && path !== '/auth/register') {
+			throw new Error(
+				`Cannot send ${method.toUpperCase()} ${path}: CSRF token is unavailable. Please log in again.`
+			);
 		}
 	}
 
@@ -83,29 +75,48 @@ function buildHeaders(method: string, customHeaders?: HeadersInit): Headers {
  * Returns `false` if refresh failed (cookie expired/invalid/absent).
  */
 async function attemptRefresh(): Promise<boolean> {
+	let response: Response;
 	try {
-		const response = await fetch(`${API_BASE}/auth/refresh`, {
+		response = await fetch(`${API_BASE}/auth/refresh`, {
 			method: 'POST',
 			credentials: 'include',
 			headers: {
-				'Content-Type': 'application/json',
-			},
+				'Content-Type': 'application/json'
+			}
 		});
-
-		if (!response.ok) {
-			clearAuth();
-			return false;
-		}
-
-		const result = await response.json();
-		const { accessToken, user } = result.data as { accessToken: string; user: User };
-
-		setAuth(accessToken, user);
-		return true;
 	} catch {
 		clearAuth();
 		return false;
 	}
+
+	if (!response.ok) {
+		clearAuth();
+		return false;
+	}
+
+	let result: AuthResponse;
+	try {
+		result = (await response.json()) as AuthResponse;
+	} catch {
+		clearAuth();
+		throw new Error('Refresh response was not valid JSON.');
+	}
+
+	const { accessToken, csrfToken, user } = result?.data ?? {};
+	if (
+		typeof accessToken !== 'string' ||
+		!accessToken ||
+		typeof csrfToken !== 'string' ||
+		!csrfToken ||
+		typeof user !== 'object' ||
+		user === null
+	) {
+		clearAuth();
+		throw new Error('Refresh response did not include a valid access token, CSRF token, and user.');
+	}
+
+	setAuth(accessToken, csrfToken, user);
+	return true;
 }
 
 /**
@@ -145,7 +156,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 	const method = (options.method || 'GET').toUpperCase();
 	const url = `${API_BASE}${path}`;
 
-	const headers = buildHeaders(method, options.headers as HeadersInit);
+	const headers = buildHeaders(method, path, options.headers as HeadersInit);
 
 	const fetchOptions: RequestInit = {
 		...options,
@@ -163,7 +174,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 
 		if (refreshed) {
 			// Retry the original request with the new token
-			const retryHeaders = buildHeaders(method, options.headers as HeadersInit);
+			const retryHeaders = buildHeaders(method, path, options.headers as HeadersInit);
 			const retryOptions: RequestInit = {
 				...options,
 				method,
