@@ -346,12 +346,19 @@
 	let requestTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function loadRequests() {
-		await logistik.fetchStockRequests({
-			search: requestSearch,
-			status: requestStatus,
-			page: requestPage,
-			limit: requestLimit
-		});
+		try {
+			await logistik.fetchStockRequests({
+				search: requestSearch,
+				status: requestStatus,
+				page: requestPage,
+				limit: requestLimit
+			});
+		} catch (err) {
+			toast.error(
+				'Gagal memuat permintaan',
+				err instanceof Error ? err.message : 'Terjadi kesalahan saat mengambil data requisition.'
+			);
+		}
 	}
 
 	function onRequestSearch() {
@@ -1246,7 +1253,7 @@
 							<span
 								class="rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-700"
 							>
-								{logistik.pendingRequestCount} Menunggu
+								{logistik.pendingRequestCount} Menunggu di halaman ini
 							</span>
 						</div>
 
@@ -1254,7 +1261,7 @@
 							<div class="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
 								<input
 									type="search"
-									placeholder="Cari no. permintaan, unit, atau pemohon…"
+									placeholder="Cari no. permintaan, catatan, nama produk, atau kode…"
 									class="min-w-56 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 									bind:value={requestSearch}
 									oninput={onRequestSearch}
@@ -1276,6 +1283,18 @@
 
 							{#if logistik.isLoadingRequests}
 								<TableSkeleton rows={6} cols={6} />
+							{:else if logistik.requestError}
+								<div class="p-6 text-center">
+									<p class="text-sm font-semibold text-red-700">Gagal memuat data requisition</p>
+									<p class="mt-1 text-xs text-red-600">{logistik.requestError}</p>
+									<button
+										type="button"
+										class="mt-3 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+										onclick={loadRequests}
+									>
+										Coba lagi
+									</button>
+								</div>
 							{:else if logistik.requestRows.length === 0}
 								<EmptyState
 									icon="🚚"
@@ -1315,9 +1334,17 @@
 														<p class="text-xs text-slate-400">{request.unit_name}</p>
 													</td>
 													<td class="px-4 py-3 text-xs text-slate-500">
-														<p>{logistik.warehouseById(request.from_warehouse_id)?.name ?? '-'}</p>
+														<p>
+															{request.from_warehouse_name ??
+																logistik.warehouseById(request.from_warehouse_id)?.name ??
+																'-'}
+														</p>
 														<p class="text-slate-300">↓</p>
-														<p>{logistik.warehouseById(request.to_warehouse_id)?.name ?? '-'}</p>
+														<p>
+															{request.to_warehouse_name ??
+																logistik.warehouseById(request.to_warehouse_id)?.name ??
+																'-'}
+														</p>
 													</td>
 													<td class="px-4 py-3 text-right text-slate-600">
 														{request.items.length}
@@ -1939,13 +1966,17 @@
 				<div class="rounded-lg bg-slate-50 px-4 py-3">
 					<p class="text-[10px] font-bold text-slate-400 uppercase">Gudang Asal</p>
 					<p class="text-sm text-slate-700">
-						{logistik.warehouseById(detailRequest.from_warehouse_id)?.name ?? '-'}
+						{detailRequest.from_warehouse_name ??
+							logistik.warehouseById(detailRequest.from_warehouse_id)?.name ??
+							'-'}
 					</p>
 				</div>
 				<div class="rounded-lg bg-slate-50 px-4 py-3">
 					<p class="text-[10px] font-bold text-slate-400 uppercase">Gudang Tujuan</p>
 					<p class="text-sm text-slate-700">
-						{logistik.warehouseById(detailRequest.to_warehouse_id)?.name ?? '-'}
+						{detailRequest.to_warehouse_name ??
+							logistik.warehouseById(detailRequest.to_warehouse_id)?.name ??
+							'-'}
 					</p>
 				</div>
 			</div>
@@ -1969,9 +2000,12 @@
 						{#each detailRequest.items as item (item.id)}
 							<tr>
 								<td class="px-3 py-2 text-slate-700">
-									{logistik.productById(item.product_id)?.name ?? '-'}
+									{item.product_name ?? logistik.productById(item.product_id)?.name ?? '-'}
+									{#if item.product_code}
+										<span class="ml-1 text-xs text-slate-400">({item.product_code})</span>
+									{/if}
 									<span class="ml-1 text-xs text-slate-400">
-										{logistik.productById(item.product_id)?.unit ?? ''}
+										{item.unit ?? logistik.productById(item.product_id)?.unit ?? ''}
 									</span>
 								</td>
 								<td class="px-3 py-2 text-right text-slate-600">
@@ -1984,7 +2018,7 @@
 											min="0"
 											max={item.requested_qty}
 											step="1"
-											aria-label={`Kuantiti disetujui untuk ${logistik.productById(item.product_id)?.name ?? 'produk'}`}
+											aria-label={`Kuantiti disetujui untuk ${item.product_name ?? logistik.productById(item.product_id)?.name ?? 'produk'}`}
 											bind:value={approvalQuantities[item.id]}
 											class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-sky-500"
 										/>

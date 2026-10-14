@@ -1,12 +1,12 @@
 /* =========================================================================
- * Dashboard Logistik — store terpusat (DUMMY DATA)
+ * Dashboard Logistik — store terpusat; requisitions dimuat dari backend.
  * -------------------------------------------------------------------------
  * Meniru skema backend multi-gudang:
  *   Products        -> master katalog universal
  *   Warehouses      -> lokasi penyimpanan fisik
  *   WarehouseStocks -> sisa stok aktual per produk per warehouse
  *   InventoryLogs   -> ledger audit trail mutasi stok
- *   StockRequests   -> permintaan/amprahan dari unit operasional
+ *   Requisitions    -> permintaan/amprahan dari unit operasional
  *   StockBatches    -> batch stok penerimaan (penerimaan/purchasing)
  *
  * Semua fetcher meniru perilaku server (delay, query param, paginasi,
@@ -255,6 +255,9 @@ export type StockRequestItem = {
 	product_id: string;
 	requested_qty: number;
 	approved_qty: number | null;
+	product_name?: string;
+	product_code?: string;
+	unit?: string;
 };
 
 export type StockRequest = {
@@ -270,7 +273,51 @@ export type StockRequest = {
 	requested_at: string;
 	notes?: string;
 	handled_by?: string;
+	from_warehouse_name?: string;
+	to_warehouse_name?: string;
 	items: StockRequestItem[];
+};
+
+type RequisitionResponseItem = {
+	id: string;
+	product_id?: string;
+	productId?: string;
+	requested_qty?: number;
+	requested_quantity?: number;
+	quantity_requested?: number;
+	approved_qty?: number | null;
+	approved_quantity?: number | null;
+	quantity_approved?: number | null;
+	product?: {
+		id?: string;
+		code?: string;
+		name?: string;
+		unit?: string;
+	};
+};
+
+type RequisitionResponseRow = {
+	id: string;
+	requisition_number: string;
+	status: string;
+	requesting_warehouse_id?: string;
+	target_warehouse_id?: string;
+	from_warehouse_id?: string;
+	to_warehouse_id?: string;
+	requesting_warehouse?: { id?: string; name?: string };
+	target_warehouse?: { id?: string; name?: string };
+	requested_by?: { id?: string; name?: string; email?: string };
+	approved_by?: { id?: string; name?: string };
+	createdAt: string;
+	notes?: string | null;
+	items: RequisitionResponseItem[];
+};
+
+type RequisitionListResponse = {
+	statusCode: number;
+	message: string;
+	data: RequisitionResponseRow[];
+	meta: MetaPagination;
 };
 
 type StockBatchListResponse = {
@@ -338,6 +385,10 @@ function parseError(err: any): string {
 		return raw.message ? String(raw.message) : JSON.stringify(raw);
 	}
 	return String(raw);
+}
+
+function isStockRequestStatus(status: string): status is StockRequestStatus {
+	return Object.prototype.hasOwnProperty.call(STOCK_REQUEST_STATUS_LABELS, status);
 }
 
 /* ------------------------------------------------------------------ */
@@ -503,6 +554,7 @@ let purchaseSummary = $state<StockBatchSummary | null>(null);
 
 let requestRows = $state<StockRequest[]>([]);
 let requestMeta = $state<MetaPagination | null>(null);
+let requestError = $state<string | null>(null);
 
 let isLoadingProducts = $state(false);
 let isLoadingStock = $state(false);
@@ -986,32 +1038,78 @@ export async function fetchStockRequests(params?: {
 	limit?: number;
 }): Promise<StockRequest[]> {
 	isLoadingRequests = true;
-	error = null;
+	requestError = null;
 	try {
-		await delay();
-		const q = (params?.search ?? '').trim().toLowerCase();
-		let rows = [...stockRequests];
+		const query = new URLSearchParams();
+		if (params?.search?.trim()) query.set('search', params.search.trim());
+		if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+		if (params?.page) query.set('page', String(params.page));
+		if (params?.limit) query.set('limit', String(params.limit));
+		const queryString = query.toString();
 
-		if (params?.status && params.status !== 'ALL') {
-			rows = rows.filter((r) => r.status === params.status);
+		const response = await api.get<RequisitionListResponse>(
+			`/logistics/requisitions${queryString ? `?${queryString}` : ''}`
+		);
+		if (!Array.isArray(response.data) || !response.meta) {
+			throw new Error('Format response daftar requisition tidak valid.');
 		}
-		if (q) {
-			rows = rows.filter(
-				(r) =>
-					r.no_trx.toLowerCase().includes(q) ||
-					r.unit_name.toLowerCase().includes(q) ||
-					r.requester.toLowerCase().includes(q)
-			);
-		}
-		rows.sort((a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime());
 
-		const { data, meta } = paginate(rows, params?.page ?? 1, params?.limit ?? 10);
-		requestRows = data;
-		requestMeta = meta;
-		return data;
+		const rows = response.data.map((row) => {
+			if (!isStockRequestStatus(row.status)) {
+				throw new Error(`Status requisition tidak dikenal: ${row.status}`);
+			}
+			const items = row.items.map((item) => {
+				const requestedQty =
+					item.requested_qty ?? item.requested_quantity ?? item.quantity_requested;
+				const approvedQty =
+					item.approved_qty ?? item.approved_quantity ?? item.quantity_approved ?? null;
+				const productId = item.product_id ?? item.productId ?? item.product?.id;
+				if (
+					!productId ||
+					typeof requestedQty !== 'number' ||
+					!Number.isFinite(requestedQty) ||
+					(approvedQty !== null &&
+						(typeof approvedQty !== 'number' || !Number.isFinite(approvedQty)))
+				) {
+					throw new Error(`Data item requisition ${row.requisition_number} tidak valid.`);
+				}
+				return {
+					id: item.id,
+					product_id: productId,
+					requested_qty: requestedQty,
+					approved_qty: approvedQty,
+					product_name: item.product?.name,
+					product_code: item.product?.code,
+					unit: item.product?.unit
+				};
+			});
+			const requestingWarehouseId =
+				row.requesting_warehouse_id ?? row.from_warehouse_id ?? row.requesting_warehouse?.id;
+			const targetWarehouseId =
+				row.target_warehouse_id ?? row.to_warehouse_id ?? row.target_warehouse?.id;
+
+			return {
+				id: row.id,
+				no_trx: row.requisition_number,
+				from_warehouse_id: targetWarehouseId ?? '',
+				to_warehouse_id: requestingWarehouseId ?? '',
+				from_warehouse_name: row.target_warehouse?.name,
+				to_warehouse_name: row.requesting_warehouse?.name,
+				requester: row.requested_by?.name ?? row.requested_by?.email ?? '-',
+				unit_name: row.requesting_warehouse?.name ?? '-',
+				status: row.status,
+				requested_at: row.createdAt,
+				notes: row.notes ?? undefined,
+				handled_by: row.approved_by?.name,
+				items
+			};
+		});
+		requestRows = rows;
+		requestMeta = response.meta;
+		return rows;
 	} catch (err) {
-		error = parseError(err);
-		return [];
+		requestError = parseError(err);
+		throw new Error(requestError);
 	} finally {
 		isLoadingRequests = false;
 	}
@@ -1196,7 +1294,7 @@ export const logistik = {
 		return rows.sort((a, b) => b.deficit - a.deficit);
 	},
 	get pendingRequestCount(): number {
-		return stockRequests.filter((r) => r.status === 'PENDING' || r.status === 'APPROVED').length;
+		return requestRows.filter((request) => request.status === 'PENDING').length;
 	},
 
 	/* View state */
@@ -1229,6 +1327,9 @@ export const logistik = {
 	},
 	get requestMeta(): MetaPagination | null {
 		return requestMeta;
+	},
+	get requestError(): string | null {
+		return requestError;
 	},
 
 	/* Loading flags */
