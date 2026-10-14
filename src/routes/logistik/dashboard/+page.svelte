@@ -391,6 +391,12 @@
 			approvalError = 'Permintaan tanpa item tidak dapat disetujui atau ditolak.';
 			return;
 		}
+		if (status === 'APPROVED') {
+			window.alert(
+				'Setujui Penuh akan menyetujui seluruh kuantiti yang diminta. Nilai pada kolom Kuantiti Disetujui tidak berpengaruh.'
+			);
+			if (!window.confirm(`Lanjutkan Setujui Penuh untuk permintaan ${request.no_trx}?`)) return;
+		}
 		const quantities = Object.fromEntries(
 			request.items.map((item) => [
 				item.id,
