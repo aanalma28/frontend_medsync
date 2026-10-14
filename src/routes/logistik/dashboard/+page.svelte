@@ -374,7 +374,6 @@
 	let approvalError = $state('');
 	let rejectOpen = $state(false);
 	let rejectTargetId = $state<string | null>(null);
-	let rejectReason = $state('');
 	let rejectError = $state('');
 	let processingRequestId = $state<string | null>(null);
 
@@ -386,40 +385,48 @@
 		approvalError = '';
 	}
 
-	async function saveRequestApproval(request: StockRequest, approveFull: boolean) {
+	async function saveRequestApproval(request: StockRequest, status: 'APPROVED' | 'PARTIAL') {
 		approvalError = '';
+		if (request.items.length === 0) {
+			approvalError = 'Permintaan tanpa item tidak dapat disetujui atau ditolak.';
+			return;
+		}
 		const quantities = Object.fromEntries(
 			request.items.map((item) => [
 				item.id,
-				approveFull ? item.requested_qty : Number(approvalQuantities[item.id])
+				status === 'APPROVED' ? item.requested_qty : Number(approvalQuantities[item.id])
 			])
 		);
 		const invalidItem = request.items.find((item) => {
 			const quantity = quantities[item.id];
+			const minimum = item.approved_qty ?? 0;
 			return (
 				!Number.isFinite(quantity) ||
 				!Number.isInteger(quantity) ||
-				quantity < 0 ||
+				(status === 'PARTIAL' && quantity <= 0) ||
+				(status === 'PARTIAL' && quantity < minimum) ||
 				quantity > item.requested_qty
 			);
 		});
 		if (invalidItem) {
-			approvalError = 'Kuantiti persetujuan harus antara 0 dan kuantiti yang diminta.';
-			return;
-		}
-		if (!request.items.some((item) => quantities[item.id] > 0)) {
 			approvalError =
-				'Minimal satu barang harus disetujui. Gunakan Tolak jika stok tidak tersedia.';
+				status === 'PARTIAL'
+					? 'Kuantiti harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.'
+					: 'Kuantiti persetujuan harus sama dengan kuantiti yang diminta.';
 			return;
 		}
-		if (!approveFull && request.items.every((item) => quantities[item.id] === item.requested_qty)) {
-			approvalError = 'Kuantiti sudah penuh. Gunakan tombol Setujui Penuh.';
+		if (
+			status === 'PARTIAL' &&
+			request.items.every((item) => quantities[item.id] === item.requested_qty)
+		) {
+			approvalError = 'Semua kuantiti sudah penuh. Gunakan tombol Setujui Penuh.';
 			return;
 		}
 
 		processingRequestId = request.id;
 		try {
-			const updatedRequest = await logistik.approveStockRequest(request.id, quantities);
+			const updatedRequest = await logistik.updateStockRequest(request.id, status, quantities);
+			detailRequest = updatedRequest;
 			toast.success(
 				updatedRequest.status === 'PARTIAL'
 					? 'Permintaan disetujui sebagian'
@@ -431,6 +438,7 @@
 		} catch (err: any) {
 			approvalError = err?.message ?? 'Gagal menyimpan persetujuan.';
 			toast.error('Gagal menyetujui', approvalError);
+			await loadRequests();
 		} finally {
 			processingRequestId = null;
 		}
@@ -439,7 +447,6 @@
 	function openReject(request: StockRequest) {
 		detailRequest = null;
 		rejectTargetId = request.id;
-		rejectReason = '';
 		rejectError = '';
 		rejectOpen = true;
 	}
@@ -447,12 +454,9 @@
 	async function submitReject() {
 		rejectError = '';
 		if (!rejectTargetId) return;
-		if (!rejectReason.trim()) {
-			rejectError = 'Alasan penolakan wajib diisi.';
-			return;
-		}
+		processingRequestId = rejectTargetId;
 		try {
-			await logistik.rejectStockRequest(rejectTargetId, rejectReason);
+			await logistik.updateStockRequest(rejectTargetId, 'REJECTED', {});
 			toast.success('Permintaan ditolak', 'Permintaan telah ditolak.');
 			rejectOpen = false;
 			await loadRequests();
@@ -460,6 +464,9 @@
 		} catch (err: any) {
 			rejectError = err?.message ?? 'Gagal menolak permintaan.';
 			toast.error('Gagal menolak', rejectError);
+			await loadRequests();
+		} finally {
+			processingRequestId = null;
 		}
 	}
 
@@ -2015,7 +2022,7 @@
 									{#if canUpdateApproval(detailRequest)}
 										<input
 											type="number"
-											min="0"
+											min={Math.max(1, item.approved_qty ?? 0)}
 											max={item.requested_qty}
 											step="1"
 											aria-label={`Kuantiti disetujui untuk ${item.product_name ?? logistik.productById(item.product_id)?.name ?? 'produk'}`}
@@ -2057,7 +2064,7 @@
 				type="button"
 				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
 				class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
-				onclick={() => saveRequestApproval(detailRequest!, false)}
+				onclick={() => saveRequestApproval(detailRequest!, 'PARTIAL')}
 			>
 				Setujui Sebagian
 			</button>
@@ -2065,7 +2072,7 @@
 				type="button"
 				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
 				class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
-				onclick={() => saveRequestApproval(detailRequest!, true)}
+				onclick={() => saveRequestApproval(detailRequest!, 'APPROVED')}
 			>
 				Setujui Penuh
 			</button>
@@ -2088,7 +2095,7 @@
 <Modal
 	open={rejectOpen}
 	title="Tolak Permintaan"
-	description="Berikan alasan penolakan agar unit pemohon mendapat konteks."
+	description="Konfirmasi penolakan permintaan ini. Statusnya akan diubah menjadi Ditolak."
 	size="md"
 	onclose={() => (rejectOpen = false)}
 >
@@ -2097,16 +2104,6 @@
 			{rejectError}
 		</div>
 	{/if}
-
-	<label class="block">
-		<span class="text-xs font-medium text-slate-600">Alasan Penolakan *</span>
-		<textarea
-			rows="3"
-			bind:value={rejectReason}
-			placeholder="Contoh: pengajuan duplikat, stok tidak mencukupi, dsb."
-			class="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-		></textarea>
-	</label>
 
 	{#snippet footer()}
 		<button
@@ -2119,10 +2116,12 @@
 		<button
 			type="button"
 			class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
-			disabled={logistik.isSubmitting}
+			disabled={logistik.isSubmitting || processingRequestId === rejectTargetId}
 			onclick={submitReject}
 		>
-			{logistik.isSubmitting ? 'Memproses…' : 'Tolak Permintaan'}
+			{logistik.isSubmitting || processingRequestId === rejectTargetId
+				? 'Memproses…'
+				: 'Tolak Permintaan'}
 		</button>
 	{/snippet}
 </Modal>

@@ -320,6 +320,12 @@ type RequisitionListResponse = {
 	meta: MetaPagination;
 };
 
+type RequisitionUpdateResponse = {
+	statusCode: number;
+	message: string;
+	data: RequisitionResponseRow;
+};
+
 type StockBatchListResponse = {
 	statusCode: number;
 	message: string;
@@ -390,6 +396,57 @@ function parseError(err: any): string {
 function isStockRequestStatus(status: string): status is StockRequestStatus {
 	return Object.prototype.hasOwnProperty.call(STOCK_REQUEST_STATUS_LABELS, status);
 }
+
+function mapRequisition(row: RequisitionResponseRow): StockRequest {
+	if (!isStockRequestStatus(row.status)) {
+		throw new Error(`Status requisition tidak dikenal: ${row.status}`);
+	}
+	const items = row.items.map((item) => {
+		const requestedQty = item.requested_qty ?? item.requested_quantity ?? item.quantity_requested;
+		const approvedQty =
+			item.approved_qty ?? item.approved_quantity ?? item.quantity_approved ?? null;
+		const productId = item.product_id ?? item.productId ?? item.product?.id;
+		if (
+			!productId ||
+			typeof requestedQty !== 'number' ||
+			!Number.isFinite(requestedQty) ||
+			(approvedQty !== null &&
+				(typeof approvedQty !== 'number' || !Number.isFinite(approvedQty)))
+		) {
+			throw new Error(`Data item requisition ${row.requisition_number} tidak valid.`);
+		}
+		return {
+			id: item.id,
+			product_id: productId,
+			requested_qty: requestedQty,
+			approved_qty: approvedQty,
+			product_name: item.product?.name,
+			product_code: item.product?.code,
+			unit: item.product?.unit
+		};
+	});
+	const requestingWarehouseId =
+		row.requesting_warehouse_id ?? row.from_warehouse_id ?? row.requesting_warehouse?.id;
+	const targetWarehouseId =
+		row.target_warehouse_id ?? row.to_warehouse_id ?? row.target_warehouse?.id;
+
+	return {
+		id: row.id,
+		no_trx: row.requisition_number,
+		from_warehouse_id: targetWarehouseId ?? '',
+		to_warehouse_id: requestingWarehouseId ?? '',
+		from_warehouse_name: row.target_warehouse?.name,
+		to_warehouse_name: row.requesting_warehouse?.name,
+		requester: row.requested_by?.name ?? row.requested_by?.email ?? '-',
+		unit_name: row.requesting_warehouse?.name ?? '-',
+		status: row.status,
+		requested_at: row.createdAt,
+		notes: row.notes ?? undefined,
+		handled_by: row.approved_by?.name,
+		items
+	};
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Seed data (dummy)                                                   */
@@ -1054,56 +1111,7 @@ export async function fetchStockRequests(params?: {
 			throw new Error('Format response daftar requisition tidak valid.');
 		}
 
-		const rows = response.data.map((row) => {
-			if (!isStockRequestStatus(row.status)) {
-				throw new Error(`Status requisition tidak dikenal: ${row.status}`);
-			}
-			const items = row.items.map((item) => {
-				const requestedQty =
-					item.requested_qty ?? item.requested_quantity ?? item.quantity_requested;
-				const approvedQty =
-					item.approved_qty ?? item.approved_quantity ?? item.quantity_approved ?? null;
-				const productId = item.product_id ?? item.productId ?? item.product?.id;
-				if (
-					!productId ||
-					typeof requestedQty !== 'number' ||
-					!Number.isFinite(requestedQty) ||
-					(approvedQty !== null &&
-						(typeof approvedQty !== 'number' || !Number.isFinite(approvedQty)))
-				) {
-					throw new Error(`Data item requisition ${row.requisition_number} tidak valid.`);
-				}
-				return {
-					id: item.id,
-					product_id: productId,
-					requested_qty: requestedQty,
-					approved_qty: approvedQty,
-					product_name: item.product?.name,
-					product_code: item.product?.code,
-					unit: item.product?.unit
-				};
-			});
-			const requestingWarehouseId =
-				row.requesting_warehouse_id ?? row.from_warehouse_id ?? row.requesting_warehouse?.id;
-			const targetWarehouseId =
-				row.target_warehouse_id ?? row.to_warehouse_id ?? row.target_warehouse?.id;
-
-			return {
-				id: row.id,
-				no_trx: row.requisition_number,
-				from_warehouse_id: targetWarehouseId ?? '',
-				to_warehouse_id: requestingWarehouseId ?? '',
-				from_warehouse_name: row.target_warehouse?.name,
-				to_warehouse_name: row.requesting_warehouse?.name,
-				requester: row.requested_by?.name ?? row.requested_by?.email ?? '-',
-				unit_name: row.requesting_warehouse?.name ?? '-',
-				status: row.status,
-				requested_at: row.createdAt,
-				notes: row.notes ?? undefined,
-				handled_by: row.approved_by?.name,
-				items
-			};
-		});
+		const rows = response.data.map(mapRequisition);
 		requestRows = rows;
 		requestMeta = response.meta;
 		return rows;
@@ -1115,62 +1123,76 @@ export async function fetchStockRequests(params?: {
 	}
 }
 
-export async function approveStockRequest(
+export async function updateStockRequest(
 	id: string,
-	approvals?: Record<string, number>
+	status: 'APPROVED' | 'PARTIAL' | 'REJECTED',
+	approvals: Record<string, number>
 ): Promise<StockRequest> {
 	isSubmitting = true;
 	error = null;
 	try {
-		await delay(420);
-		const request = stockRequests.find((r) => r.id === id);
+		const request = requestRows.find((row) => row.id === id);
 		if (!request) throw new Error('Permintaan tidak ditemukan');
+		if (request.status !== 'PENDING' && request.status !== 'PARTIAL') {
+			throw new Error('Hanya permintaan berstatus Menunggu atau Disetujui Sebagian yang dapat diperbarui.');
+		}
+		if (request.items.length === 0) {
+			throw new Error('Permintaan tanpa item tidak dapat disetujui atau ditolak.');
+		}
+		if (new Set(request.items.map((item) => item.id)).size !== request.items.length) {
+			throw new Error('Item requisition memiliki ID duplikat dan tidak dapat diperbarui.');
+		}
 
-		const approvedQuantities = request.items.map((item) => {
-			const qty = approvals?.[item.id];
-			return qty === undefined ? item.requested_qty : Number(qty);
-		});
+		const items = request.items.map((item) => ({
+			requisition_item_id: item.id,
+			quantity_approved:
+				status === 'REJECTED' ? (item.approved_qty ?? 0) : Number(approvals[item.id])
+		}));
 		if (
-			approvedQuantities.some(
-				(quantity, index) =>
-					!Number.isInteger(quantity) || quantity < 0 || quantity > request.items[index].requested_qty
+			items.some(
+				(item) => !Number.isInteger(item.quantity_approved) || item.quantity_approved < 0
 			)
 		) {
-			throw new Error('Kuantiti persetujuan harus berupa bilangan bulat antara 0 dan kuantiti yang diminta.');
+			throw new Error('Kuantiti persetujuan harus berupa bilangan bulat nol atau lebih.');
 		}
-		if (!approvedQuantities.some((quantity) => quantity > 0)) {
-			throw new Error('Minimal satu barang harus disetujui.');
+		if (status === 'APPROVED') {
+			const hasMismatch = request.items.some(
+				(item, index) => items[index].quantity_approved !== item.requested_qty
+			);
+			if (hasMismatch) {
+				throw new Error(
+					'Untuk persetujuan penuh, kuantiti setiap barang harus sama dengan kuantiti yang diminta.'
+				);
+			}
 		}
-		let partial = false;
-		request.items.forEach((item, index) => {
-			item.approved_qty = approvedQuantities[index];
-			if (item.approved_qty < item.requested_qty) partial = true;
-		});
-		request.status = partial ? 'PARTIAL' : 'APPROVED';
-		request.handled_by = 'Petugas Logistik';
-		return request;
-	} catch (err) {
-		const message = parseError(err);
-		error = message;
-		throw new Error(message);
-	} finally {
-		isSubmitting = false;
-	}
-}
+		if (status === 'PARTIAL') {
+			const hasInvalidQuantity = request.items.some((item, index) => {
+				const nextApproved = items[index].quantity_approved;
+				const currentApproved = item.approved_qty ?? 0;
+				return (
+					nextApproved <= 0 ||
+					nextApproved < currentApproved ||
+					nextApproved > item.requested_qty
+				);
+			});
+			if (hasInvalidQuantity) {
+				throw new Error(
+					'Kuantiti tiap barang harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.'
+				);
+			}
+			if (request.items.every((item, index) => items[index].quantity_approved === item.requested_qty)) {
+				throw new Error('Gunakan status persetujuan penuh jika semua kuantiti disetujui.');
+			}
+		}
 
-export async function rejectStockRequest(id: string, reason: string): Promise<StockRequest> {
-	isSubmitting = true;
-	error = null;
-	try {
-		await delay(400);
-		const request = stockRequests.find((r) => r.id === id);
-		if (!request) throw new Error('Permintaan tidak ditemukan');
-
-		request.status = 'REJECTED';
-		request.handled_by = 'Petugas Logistik';
-		request.notes = reason?.trim() ? `Ditolak — ${reason.trim()}` : 'Ditolak oleh Petugas Logistik';
-		request.items.forEach((item) => (item.approved_qty = 0));
-		return request;
+		const response = await api.patch<RequisitionUpdateResponse>(
+			`/logistics/requisitions/${encodeURIComponent(id)}`,
+			{ status, items }
+		);
+		if (!response.data) throw new Error('Response update requisition tidak berisi data.');
+		const updatedRequest = mapRequisition(response.data);
+		requestRows = requestRows.map((row) => (row.id === id ? updatedRequest : row));
+		return updatedRequest;
 	} catch (err) {
 		const message = parseError(err);
 		error = message;
@@ -1382,7 +1404,6 @@ export const logistik = {
 	fetchInventoryLogs,
 	adjustStock,
 	fetchStockRequests,
-	approveStockRequest,
-	rejectStockRequest,
+	updateStockRequest,
 	fulfillStockRequest
 };
