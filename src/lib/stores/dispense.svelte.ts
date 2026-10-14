@@ -166,7 +166,13 @@ export interface InventoryLog {
 	createdAt: string;
 }
 
-export type StockRequestStatus = 'PENDING' | 'APPROVED' | 'PARTIAL' | 'FULFILLED' | 'REJECTED';
+export type StockRequestStatus =
+	| 'PENDING'
+	| 'APPROVED'
+	| 'PARTIAL'
+	| 'REJECTED'
+	| 'DISTRIBUTED'
+	| 'CANCELLED';
 
 export interface StockRequestItem {
 	product_id: string;

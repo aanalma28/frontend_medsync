@@ -67,7 +67,7 @@
 			</div>
 
 			{#if footer}
-				<footer class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
+				<footer class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
 					{@render footer()}
 				</footer>
 			{/if}

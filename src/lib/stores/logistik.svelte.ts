@@ -224,14 +224,21 @@ export type StockBatchSummary = {
 /* Stock Requests (amprahan)                                           */
 /* ------------------------------------------------------------------ */
 
-export type StockRequestStatus = 'PENDING' | 'APPROVED' | 'PARTIAL' | 'REJECTED' | 'FULFILLED';
+export type StockRequestStatus =
+	| 'PENDING'
+	| 'APPROVED'
+	| 'PARTIAL'
+	| 'REJECTED'
+	| 'DISTRIBUTED'
+	| 'CANCELLED';
 
 export const STOCK_REQUEST_STATUS_LABELS: Record<StockRequestStatus, string> = {
 	PENDING: 'Menunggu',
 	APPROVED: 'Disetujui',
 	PARTIAL: 'Disetujui Sebagian',
 	REJECTED: 'Ditolak',
-	FULFILLED: 'Terkirim'
+	DISTRIBUTED: 'Terkirim',
+	CANCELLED: 'Dibatalkan'
 };
 
 export const STOCK_REQUEST_STATUS_VARIANTS: Record<StockRequestStatus, string> = {
@@ -239,7 +246,8 @@ export const STOCK_REQUEST_STATUS_VARIANTS: Record<StockRequestStatus, string> =
 	APPROVED: 'blue',
 	PARTIAL: 'purple',
 	REJECTED: 'red',
-	FULFILLED: 'green'
+	DISTRIBUTED: 'green',
+	CANCELLED: 'slate'
 };
 
 export type StockRequestItem = {
@@ -462,7 +470,7 @@ function seedRequests(): StockRequest[] {
 		},
 		{
 			id: 'req-06', no_trx: 'RO-2024-0440', from_warehouse_id: 'wh-01', to_warehouse_id: 'wh-02',
-			requester: 'Apt. Dinda', unit_name: 'Depo Farmasi', status: 'FULFILLED', requested_at: hoursAgo(72),
+			requester: 'Apt. Dinda', unit_name: 'Depo Farmasi', status: 'DISTRIBUTED', requested_at: hoursAgo(72),
 			handled_by: 'Rizky (Logistik)', notes: 'Barang sudah diterima unit tujuan.',
 			items: [{ id: 'rqi-12', product_id: 'prd-01', requested_qty: 200, approved_qty: 200 }]
 		}
@@ -1020,12 +1028,27 @@ export async function approveStockRequest(
 		const request = stockRequests.find((r) => r.id === id);
 		if (!request) throw new Error('Permintaan tidak ditemukan');
 
-		request.items.forEach((item) => {
+		const approvedQuantities = request.items.map((item) => {
 			const qty = approvals?.[item.id];
-			item.approved_qty =
-				qty === undefined ? item.requested_qty : Math.max(0, Math.min(Number(qty), item.requested_qty));
+			return qty === undefined ? item.requested_qty : Number(qty);
 		});
-		request.status = 'APPROVED';
+		if (
+			approvedQuantities.some(
+				(quantity, index) =>
+					!Number.isInteger(quantity) || quantity < 0 || quantity > request.items[index].requested_qty
+			)
+		) {
+			throw new Error('Kuantiti persetujuan harus berupa bilangan bulat antara 0 dan kuantiti yang diminta.');
+		}
+		if (!approvedQuantities.some((quantity) => quantity > 0)) {
+			throw new Error('Minimal satu barang harus disetujui.');
+		}
+		let partial = false;
+		request.items.forEach((item, index) => {
+			item.approved_qty = approvedQuantities[index];
+			if (item.approved_qty < item.requested_qty) partial = true;
+		});
+		request.status = partial ? 'PARTIAL' : 'APPROVED';
 		request.handled_by = 'Petugas Logistik';
 		return request;
 	} catch (err) {
@@ -1062,7 +1085,7 @@ export async function rejectStockRequest(id: string, reason: string): Promise<St
 /**
  * Proses pengeluaran barang dari gudang asal ke gudang tujuan.
  * Memicu mutasi TRANSFER_OUT (asal) dan TRANSFER_IN (tujuan).
- * Bila stok asal kurang -> status PARTIAL, bila cukup -> FULFILLED.
+ * Bila stok asal kurang, permintaan tetap berstatus PARTIAL agar dapat diproses ulang.
  */
 export async function fulfillStockRequest(id: string): Promise<StockRequest> {
 	isSubmitting = true;
@@ -1125,7 +1148,7 @@ export async function fulfillStockRequest(id: string): Promise<StockRequest> {
 		}
 
 		inventoryLogs = [...newLogs, ...inventoryLogs];
-		request.status = partial ? 'PARTIAL' : 'FULFILLED';
+		request.status = partial ? 'PARTIAL' : 'DISTRIBUTED';
 		request.handled_by = 'Petugas Logistik';
 		return request;
 	} catch (err) {

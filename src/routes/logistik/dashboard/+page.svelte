@@ -363,27 +363,74 @@
 	}
 
 	let detailRequest = $state<StockRequest | null>(null);
+	let approvalQuantities = $state<Record<string, number>>({});
+	let approvalError = $state('');
 	let rejectOpen = $state(false);
 	let rejectTargetId = $state<string | null>(null);
 	let rejectReason = $state('');
 	let rejectError = $state('');
 	let processingRequestId = $state<string | null>(null);
 
-	async function approveRequest(request: StockRequest) {
+	function openRequestDetail(request: StockRequest) {
+		detailRequest = request;
+		approvalQuantities = Object.fromEntries(
+			request.items.map((item) => [item.id, item.approved_qty ?? item.requested_qty])
+		);
+		approvalError = '';
+	}
+
+	async function saveRequestApproval(request: StockRequest, approveFull: boolean) {
+		approvalError = '';
+		const quantities = Object.fromEntries(
+			request.items.map((item) => [
+				item.id,
+				approveFull ? item.requested_qty : Number(approvalQuantities[item.id])
+			])
+		);
+		const invalidItem = request.items.find((item) => {
+			const quantity = quantities[item.id];
+			return (
+				!Number.isFinite(quantity) ||
+				!Number.isInteger(quantity) ||
+				quantity < 0 ||
+				quantity > item.requested_qty
+			);
+		});
+		if (invalidItem) {
+			approvalError = 'Kuantiti persetujuan harus antara 0 dan kuantiti yang diminta.';
+			return;
+		}
+		if (!request.items.some((item) => quantities[item.id] > 0)) {
+			approvalError =
+				'Minimal satu barang harus disetujui. Gunakan Tolak jika stok tidak tersedia.';
+			return;
+		}
+		if (!approveFull && request.items.every((item) => quantities[item.id] === item.requested_qty)) {
+			approvalError = 'Kuantiti sudah penuh. Gunakan tombol Setujui Penuh.';
+			return;
+		}
+
 		processingRequestId = request.id;
 		try {
-			await logistik.approveStockRequest(request.id);
-			toast.success('Permintaan disetujui', `${request.no_trx} telah disetujui.`);
+			const updatedRequest = await logistik.approveStockRequest(request.id, quantities);
+			toast.success(
+				updatedRequest.status === 'PARTIAL'
+					? 'Permintaan disetujui sebagian'
+					: 'Permintaan disetujui',
+				`${request.no_trx} berhasil diperbarui.`
+			);
 			await loadRequests();
 			await loadOverview();
 		} catch (err: any) {
-			toast.error('Gagal menyetujui', err?.message ?? 'Terjadi kesalahan.');
+			approvalError = err?.message ?? 'Gagal menyimpan persetujuan.';
+			toast.error('Gagal menyetujui', approvalError);
 		} finally {
 			processingRequestId = null;
 		}
 	}
 
 	function openReject(request: StockRequest) {
+		detailRequest = null;
 		rejectTargetId = request.id;
 		rejectReason = '';
 		rejectError = '';
@@ -585,12 +632,12 @@
 		return `Rp ${formatNumber(value)}`;
 	}
 
-	function canApprove(request: StockRequest): boolean {
-		return request.status === 'PENDING';
+	function canUpdateApproval(request: StockRequest): boolean {
+		return request.status === 'PENDING' || request.status === 'PARTIAL';
 	}
 
 	function canReject(request: StockRequest): boolean {
-		return request.status === 'PENDING' || request.status === 'APPROVED';
+		return canUpdateApproval(request);
 	}
 
 	function canFulfill(request: StockRequest): boolean {
@@ -1258,7 +1305,7 @@
 														<button
 															type="button"
 															class="font-mono text-xs font-semibold text-sky-700 hover:underline"
-															onclick={() => (detailRequest = request)}
+															onclick={() => openRequestDetail(request)}
 														>
 															{request.no_trx}
 														</button>
@@ -1285,40 +1332,10 @@
 													</td>
 													<td class="px-4 py-3">
 														<div class="flex flex-wrap justify-end gap-1">
-															{#if canApprove(request)}
-																<button
-																	type="button"
-																	disabled={processingRequestId === request.id}
-																	class="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-																	onclick={() => approveRequest(request)}
-																>
-																	Setujui
-																</button>
-															{/if}
-															{#if canFulfill(request)}
-																<button
-																	type="button"
-																	disabled={processingRequestId === request.id}
-																	class="rounded-lg bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
-																	onclick={() => fulfillRequest(request)}
-																>
-																	Kirim
-																</button>
-															{/if}
-															{#if canReject(request)}
-																<button
-																	type="button"
-																	disabled={processingRequestId === request.id}
-																	class="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"
-																	onclick={() => openReject(request)}
-																>
-																	Tolak
-																</button>
-															{/if}
 															<button
 																type="button"
 																class="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100"
-																onclick={() => (detailRequest = request)}
+																onclick={() => openRequestDetail(request)}
 															>
 																Detail
 															</button>
@@ -1648,7 +1665,7 @@
 			</label>
 		</div>
 
-		<div class="grid gap-4 sm:grid-cols-2">			
+		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="block">
 				<span class="text-xs font-medium text-slate-600">Min. Stok</span>
 				<input
@@ -1784,88 +1801,88 @@
 
 		<div class="space-y-3 border-t border-slate-100 pt-4">
 			<div class="flex items-center justify-between gap-3">
-			<div>
-				<h3 class="text-sm font-semibold text-slate-800">Daftar Barang</h3>
-				<p class="mt-0.5 text-xs text-slate-500">
-					Setiap barang dapat memiliki kuantiti, harga, dan batch berbeda.
-				</p>
-			</div>
-			<button
-				type="button"
-				class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-				onclick={addRestockItem}
-			>
-				+ Tambah Barang
-			</button>
+				<div>
+					<h3 class="text-sm font-semibold text-slate-800">Daftar Barang</h3>
+					<p class="mt-0.5 text-xs text-slate-500">
+						Setiap barang dapat memiliki kuantiti, harga, dan batch berbeda.
+					</p>
+				</div>
+				<button
+					type="button"
+					class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+					onclick={addRestockItem}
+				>
+					+ Tambah Barang
+				</button>
 			</div>
 
 			{#each restockForm.items as item, index (index)}
-			<div class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-				<div class="flex items-center justify-between gap-3">
-					<p class="text-xs font-semibold text-slate-700">Barang {index + 1}</p>
-					<button
-						type="button"
-						class="text-xs font-medium text-red-600 transition hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
-						disabled={restockForm.items.length <= 1}
-						onclick={() => removeRestockItem(index)}
-					>
-						Hapus
-					</button>
-				</div>
+				<div class="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-xs font-semibold text-slate-700">Barang {index + 1}</p>
+						<button
+							type="button"
+							class="text-xs font-medium text-red-600 transition hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
+							disabled={restockForm.items.length <= 1}
+							onclick={() => removeRestockItem(index)}
+						>
+							Hapus
+						</button>
+					</div>
 
-				<label class="block">
-					<span class="text-xs font-medium text-slate-600">Produk *</span>
-					<select
-						bind:value={item.product_id}
-						onchange={() => onRestockProductChange(item)}
-						class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-					>
-						{#each productStore.products as product (product.id)}
-							<option value={product.id}>{product.name} ({product.code})</option>
-						{/each}
-					</select>
-				</label>
+					<label class="block">
+						<span class="text-xs font-medium text-slate-600">Produk *</span>
+						<select
+							bind:value={item.product_id}
+							onchange={() => onRestockProductChange(item)}
+							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+						>
+							{#each productStore.products as product (product.id)}
+								<option value={product.id}>{product.name} ({product.code})</option>
+							{/each}
+						</select>
+					</label>
 
-				<div class="grid gap-3 sm:grid-cols-2">
-					<label class="block">
-						<span class="text-xs font-medium text-slate-600">Kuantiti Masuk *</span>
-						<input
-							type="number"
-							min="1"
-							bind:value={item.quantity}
-							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-						/>
-					</label>
-					<label class="block">
-						<span class="text-xs font-medium text-slate-600">Harga Beli Satuan</span>
-						<input
-							type="number"
-							min="0"
-							bind:value={item.buy_price}
-							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-						/>
-					</label>
-				</div>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<label class="block">
+							<span class="text-xs font-medium text-slate-600">Kuantiti Masuk *</span>
+							<input
+								type="number"
+								min="1"
+								bind:value={item.quantity}
+								class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+							/>
+						</label>
+						<label class="block">
+							<span class="text-xs font-medium text-slate-600">Harga Beli Satuan</span>
+							<input
+								type="number"
+								min="0"
+								bind:value={item.buy_price}
+								class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+							/>
+						</label>
+					</div>
 
-				<div class="grid gap-3 sm:grid-cols-2">
-					<label class="block">
-						<span class="text-xs font-medium text-slate-600">No. Batch</span>
-						<input
-							bind:value={item.batch_number}
-							placeholder="B2401-01"
-							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-						/>
-					</label>
-					<label class="block">
-						<span class="text-xs font-medium text-slate-600">Kedaluwarsa (Exp. Date)</span>
-						<input
-							type="date"
-							bind:value={item.exp_date}
-							class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-						/>
-					</label>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<label class="block">
+							<span class="text-xs font-medium text-slate-600">No. Batch</span>
+							<input
+								bind:value={item.batch_number}
+								placeholder="B2401-01"
+								class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+							/>
+						</label>
+						<label class="block">
+							<span class="text-xs font-medium text-slate-600">Kedaluwarsa (Exp. Date)</span>
+							<input
+								type="date"
+								bind:value={item.exp_date}
+								class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+							/>
+						</label>
+					</div>
 				</div>
-			</div>
 			{/each}
 		</div>
 	</div>
@@ -1895,12 +1912,18 @@
 <Modal
 	open={!!detailRequest}
 	title={`Detail Permintaan ${detailRequest?.no_trx ?? ''}`}
-	description="Rincian item yang diminta unit operasional."
-	size="md"
+	description="Periksa kuantiti setiap barang dan tetapkan persetujuan permintaan."
+	size="lg"
 	onclose={() => (detailRequest = null)}
 >
 	{#if detailRequest}
 		<div class="space-y-4">
+			{#if approvalError}
+				<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+					{approvalError}
+				</div>
+			{/if}
+
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="rounded-lg bg-slate-50 px-4 py-3">
 					<p class="text-[10px] font-bold text-slate-400 uppercase">Pemohon / Unit</p>
@@ -1939,7 +1962,7 @@
 						<tr>
 							<th class="px-3 py-2 text-left font-medium">Produk</th>
 							<th class="px-3 py-2 text-right font-medium">Diminta</th>
-							<th class="px-3 py-2 text-right font-medium">Disetujui</th>
+							<th class="px-3 py-2 text-right font-medium">Kuantiti Disetujui</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-slate-100">
@@ -1947,12 +1970,27 @@
 							<tr>
 								<td class="px-3 py-2 text-slate-700">
 									{logistik.productById(item.product_id)?.name ?? '-'}
+									<span class="ml-1 text-xs text-slate-400">
+										{logistik.productById(item.product_id)?.unit ?? ''}
+									</span>
 								</td>
 								<td class="px-3 py-2 text-right text-slate-600">
 									{formatNumber(item.requested_qty)}
 								</td>
 								<td class="px-3 py-2 text-right font-medium text-slate-800">
-									{item.approved_qty === null ? '-' : formatNumber(item.approved_qty)}
+									{#if canUpdateApproval(detailRequest)}
+										<input
+											type="number"
+											min="0"
+											max={item.requested_qty}
+											step="1"
+											aria-label={`Kuantiti disetujui untuk ${logistik.productById(item.product_id)?.name ?? 'produk'}`}
+											bind:value={approvalQuantities[item.id]}
+											class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-sky-500"
+										/>
+									{:else}
+										{item.approved_qty === null ? '-' : formatNumber(item.approved_qty)}
+									{/if}
 								</td>
 							</tr>
 						{/each}
@@ -1965,11 +2003,48 @@
 	{#snippet footer()}
 		<button
 			type="button"
-			class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+			class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
 			onclick={() => (detailRequest = null)}
 		>
 			Tutup
 		</button>
+		{#if detailRequest && canUpdateApproval(detailRequest)}
+			{#if canReject(detailRequest)}
+				<button
+					type="button"
+					disabled={processingRequestId === detailRequest.id}
+					class="rounded-lg bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+					onclick={() => openReject(detailRequest!)}
+				>
+					Tolak
+				</button>
+			{/if}
+			<button
+				type="button"
+				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+				class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
+				onclick={() => saveRequestApproval(detailRequest!, false)}
+			>
+				Setujui Sebagian
+			</button>
+			<button
+				type="button"
+				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+				class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+				onclick={() => saveRequestApproval(detailRequest!, true)}
+			>
+				Setujui Penuh
+			</button>
+		{:else if detailRequest && canFulfill(detailRequest)}
+			<button
+				type="button"
+				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+				class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+				onclick={() => fulfillRequest(detailRequest!)}
+			>
+				Kirim Distribusi
+			</button>
+		{/if}
 	{/snippet}
 </Modal>
 
@@ -2075,8 +2150,7 @@
 					rows="3"
 					class="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
 					bind:value={adjustReason}
-					placeholder="Contoh: selisih hasil opname, barang rusak, kadaluwarsa, dsb."
-				></textarea>
+					placeholder="Contoh: selisih hasil opname, barang rusak, kadaluwarsa, dsb."></textarea>
 			</label>
 		</div>
 	{/if}
