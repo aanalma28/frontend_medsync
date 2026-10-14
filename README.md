@@ -1,3 +1,23 @@
+# Login User
+
+perawat@medsync.com
+NursePass123
+
+logistik@medsync.com
+LogisticPass123
+
+dokter@medsync.com
+DoctorPass123
+
+apoteker@medsync.com
+PharmacistPass123
+
+ayu.putri@email.com
+PatientPass123
+
+superadmin@medsync.com
+Medsync1Super2Admin3
+
 # MedSync - Frontend MVP
 
 ## 🚀 Deskripsi Proyek
