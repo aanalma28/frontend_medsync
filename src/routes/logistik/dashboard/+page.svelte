@@ -403,6 +403,8 @@
 			return (
 				!Number.isFinite(quantity) ||
 				!Number.isInteger(quantity) ||
+				quantity < 0 ||
+				(status === 'APPROVED' && quantity !== item.requested_qty) ||
 				(status === 'PARTIAL' && quantity <= 0) ||
 				(status === 'PARTIAL' && quantity < minimum) ||
 				quantity > item.requested_qty
@@ -410,9 +412,9 @@
 		});
 		if (invalidItem) {
 			approvalError =
-				status === 'PARTIAL'
-					? 'Kuantiti harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.'
-					: 'Kuantiti persetujuan harus sama dengan kuantiti yang diminta.';
+				status === 'APPROVED'
+					? 'Untuk setujui penuh, isi kuantiti persetujuan sama persis dengan kuantiti yang diminta pada setiap produk.'
+					: 'Kuantiti harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.';
 			return;
 		}
 		if (
@@ -1991,6 +1993,14 @@
 			{#if detailRequest.notes}
 				<p class="rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-800">
 					{detailRequest.notes}
+				</p>
+			{/if}
+
+			{#if canUpdateApproval(detailRequest)}
+				<p class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+					<strong>Setujui Penuh:</strong> kuantiti persetujuan otomatis menjadi sama dengan kuantiti
+					yang diminta untuk setiap produk. Nilai pada kolom Kuantiti Disetujui tidak berpengaruh
+					jika opsi ini dipilih.
 				</p>
 			{/if}
 

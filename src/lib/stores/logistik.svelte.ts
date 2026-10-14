@@ -1142,6 +1142,19 @@ export async function updateStockRequest(
 		if (new Set(request.items.map((item) => item.id)).size !== request.items.length) {
 			throw new Error('Item requisition memiliki ID duplikat dan tidak dapat diperbarui.');
 		}
+		if (
+			request.items.some(
+				(item) =>
+					!Number.isInteger(item.requested_qty) ||
+					item.requested_qty <= 0 ||
+					(item.approved_qty !== null &&
+						(!Number.isInteger(item.approved_qty) ||
+							item.approved_qty < 0 ||
+							item.approved_qty > item.requested_qty))
+			)
+		) {
+			throw new Error('Data kuantiti item requisition tidak valid. Muat ulang data sebelum mencoba kembali.');
+		}
 
 		const items = request.items.map((item) => ({
 			requisition_item_id: item.id,
