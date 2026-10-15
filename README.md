@@ -1,22 +1,28 @@
 # Login User
 
-perawat@medsync.com
-NursePass123
+**email:** perawat@medsync.com
 
-logistik@medsync.com
-LogisticPass123
+**pass:** NursePass123
 
-dokter@medsync.com
-DoctorPass123
+**email:** logistik@medsync.com
 
-apoteker@medsync.com
-PharmacistPass123
+**pass:** LogisticPass123
 
-ayu.putri@email.com
-PatientPass123
+**email:** dokter@medsync.com
 
-superadmin@medsync.com
-Medsync1Super2Admin3
+**pass:** DoctorPass123
+
+**email:** apoteker@medsync.com
+
+**pass:** PharmacistPass123
+
+**email:** ayu.putri@email.com
+
+**pass:** PatientPass123
+
+**email:** superadmin@medsync.com
+
+**pass:** Medsync1Super2Admin3
 
 # MedSync - Frontend MVP
 
