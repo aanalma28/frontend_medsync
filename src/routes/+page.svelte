@@ -1,6 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/icon.png';
-	
+
 	const highlights = [
 		{
 			title: 'Layanan cepat',
@@ -99,8 +99,8 @@
 <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_35%),linear-gradient(135deg,_#f8fbff_0%,_#eef6ff_100%)] text-slate-900">
 	<header class="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
 		<a href="/" class="flex items-center gap-3 text-lg font-semibold tracking-wide text-slate-800">
-			<div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-600 text-xl font-bold text-white shadow-lg shadow-sky-200">
-				<img src={favicon} alt="MedSync Logo" class="h-6 w-6" />
+			<div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white-600 text-xl font-bold text-white shadow-lg shadow-white-200">
+				<img src={favicon} alt="MedSync Logo" class="h-10 w-10" />
 			</div>
 			<span>MedSync</span>
 		</a>
