@@ -171,7 +171,8 @@ export type StockRequestStatus =
 	| 'APPROVED'
 	| 'PARTIAL'
 	| 'REJECTED'
-	| 'DISTRIBUTED'
+	| 'SHIPPED'
+	| 'COMPLETED'
 	| 'CANCELLED';
 
 export interface StockRequestItem {

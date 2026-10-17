@@ -229,7 +229,8 @@ export type StockRequestStatus =
 	| 'APPROVED'
 	| 'PARTIAL'
 	| 'REJECTED'
-	| 'DISTRIBUTED'
+	| 'SHIPPED'
+	| 'COMPLETED'
 	| 'CANCELLED';
 
 export const STOCK_REQUEST_STATUS_LABELS: Record<StockRequestStatus, string> = {
@@ -237,7 +238,8 @@ export const STOCK_REQUEST_STATUS_LABELS: Record<StockRequestStatus, string> = {
 	APPROVED: 'Disetujui',
 	PARTIAL: 'Disetujui Sebagian',
 	REJECTED: 'Ditolak',
-	DISTRIBUTED: 'Terkirim',
+	SHIPPED: 'Dikirim',
+	COMPLETED: 'Selesai',
 	CANCELLED: 'Dibatalkan'
 };
 
@@ -246,7 +248,8 @@ export const STOCK_REQUEST_STATUS_VARIANTS: Record<StockRequestStatus, string> =
 	APPROVED: 'blue',
 	PARTIAL: 'purple',
 	REJECTED: 'red',
-	DISTRIBUTED: 'green',
+	SHIPPED: 'green',
+	COMPLETED: 'green',
 	CANCELLED: 'slate'
 };
 
@@ -578,8 +581,8 @@ function seedRequests(): StockRequest[] {
 		},
 		{
 			id: 'req-06', no_trx: 'RO-2024-0440', from_warehouse_id: 'wh-01', to_warehouse_id: 'wh-02',
-			requester: 'Apt. Dinda', unit_name: 'Depo Farmasi', status: 'DISTRIBUTED', requested_at: hoursAgo(72),
-			handled_by: 'Rizky (Logistik)', notes: 'Barang sudah diterima unit tujuan.',
+			requester: 'Apt. Dinda', unit_name: 'Depo Farmasi', status: 'SHIPPED', requested_at: hoursAgo(72),
+			handled_by: 'Rizky (Logistik)', notes: 'Barang telah dikirim dan menunggu konfirmasi penerimaan.',
 			items: [{ id: 'rqi-12', product_id: 'prd-01', requested_qty: 200, approved_qty: 200 }]
 		}
 	];
@@ -1281,7 +1284,7 @@ export async function fulfillStockRequest(id: string): Promise<StockRequest> {
 		}
 
 		inventoryLogs = [...newLogs, ...inventoryLogs];
-		request.status = partial ? 'PARTIAL' : 'DISTRIBUTED';
+		request.status = partial ? 'PARTIAL' : 'SHIPPED';
 		request.handled_by = 'Petugas Logistik';
 		return request;
 	} catch (err) {
