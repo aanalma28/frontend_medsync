@@ -2092,6 +2092,16 @@
 			>
 				Setujui Penuh
 			</button>
+			{#if detailRequest.status === 'PARTIAL'}
+				<button
+					type="button"
+					disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+					class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+					onclick={() => fulfillRequest(detailRequest!)}
+				>
+					Kirim Barang
+				</button>
+			{/if}
 		{:else if detailRequest && canFulfill(detailRequest)}
 			<button
 				type="button"
