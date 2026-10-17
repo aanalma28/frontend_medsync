@@ -211,6 +211,29 @@ export type StockBatch = {
 	updatedAt?: string;
 };
 
+type StockBatchResponseRow = {
+	id: string;
+	batch_number: string;
+	exp_date: string | null;
+	buy_price: number | string;
+	initial_stock: number | string;
+	current_stock: number | string;
+	product?: {
+		id: string;
+		code: string;
+		name: string;
+		unit: string;
+		category?: ProductCategory;
+	} | null;
+	warehouse?: {
+		id: string;
+		name: string;
+		type: WarehouseType;
+	} | null;
+	createdAt?: string;
+	updatedAt?: string;
+};
+
 export type StockBatchSummary = {
 	total_batches: number;
 	total_initial_stock: number;
@@ -258,9 +281,16 @@ export type StockRequestItem = {
 	product_id: string;
 	requested_qty: number;
 	approved_qty: number | null;
+	stock_batch_id?: string | null;
+	batch_allocations?: StockBatchAllocation[];
 	product_name?: string;
 	product_code?: string;
 	unit?: string;
+};
+
+export type StockBatchAllocation = {
+	stock_batch_id: string;
+	quantity_approved: number;
 };
 
 export type StockRequest = {
@@ -291,6 +321,9 @@ type RequisitionResponseItem = {
 	approved_qty?: number | null;
 	approved_quantity?: number | null;
 	quantity_approved?: number | null;
+	stock_batch_id?: string | null;
+	stock_batch?: { id?: string } | null;
+	batch_allocations?: StockBatchAllocation[];
 	product?: {
 		id?: string;
 		code?: string;
@@ -332,7 +365,7 @@ type RequisitionUpdateResponse = {
 type StockBatchListResponse = {
 	statusCode: number;
 	message: string;
-	data: StockBatch[];
+	data: StockBatchResponseRow[];
 	summary: StockBatchSummary;
 	meta: MetaPagination;
 };
@@ -423,6 +456,17 @@ function mapRequisition(row: RequisitionResponseRow): StockRequest {
 			product_id: productId,
 			requested_qty: requestedQty,
 			approved_qty: approvedQty,
+			stock_batch_id: item.stock_batch_id ?? item.stock_batch?.id ?? null,
+			batch_allocations:
+				item.batch_allocations ??
+				(item.stock_batch_id ?? item.stock_batch?.id
+					? [
+							{
+								stock_batch_id: item.stock_batch_id ?? item.stock_batch?.id ?? '',
+								quantity_approved: approvedQty ?? 0
+							}
+						]
+					: []),
 			product_name: item.product?.name,
 			product_code: item.product?.code,
 			unit: item.product?.unit
@@ -894,6 +938,58 @@ export async function restockProduct(dto: {
 /* Fetch: Stock Batches (penerimaan)                                   */
 /* ------------------------------------------------------------------ */
 
+function mapStockBatch(batch: StockBatchResponseRow): StockBatch {
+	const nowDate = new Date();
+	const ninetyDaysFromNow = new Date();
+	ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
+
+	const expDate = batch.exp_date ? new Date(batch.exp_date) : null;
+	const currentStock = Number(batch.current_stock ?? 0);
+	const initialStock = Number(batch.initial_stock ?? 0);
+	const isExpired = expDate ? expDate < nowDate : false;
+	const isNearExpiry = expDate ? !isExpired && expDate <= ninetyDaysFromNow : false;
+	const isEmpty = currentStock <= 0;
+
+	return {
+		id: batch.id,
+		batch_number: batch.batch_number,
+		exp_date: batch.exp_date,
+		buy_price: Number(batch.buy_price ?? 0),
+		initial_stock: initialStock,
+		current_stock: currentStock,
+		remaining_percentage:
+			initialStock > 0 ? Math.round((currentStock / initialStock) * 100) : 0,
+		status: isEmpty
+			? 'OUT_OF_STOCK'
+			: isExpired
+				? 'EXPIRED'
+				: isNearExpiry
+					? 'NEAR_EXPIRY'
+					: 'AVAILABLE',
+		is_empty: isEmpty,
+		is_expired: isExpired,
+		is_near_expiry: isNearExpiry,
+		product: batch.product
+			? {
+					id: batch.product.id,
+					code: batch.product.code,
+					name: batch.product.name,
+					unit: batch.product.unit,
+					category: batch.product.category
+				}
+			: null,
+		warehouse: batch.warehouse
+			? {
+					id: batch.warehouse.id,
+					name: batch.warehouse.name,
+					type: batch.warehouse.type
+				}
+			: null,
+		createdAt: batch.createdAt,
+		updatedAt: batch.updatedAt
+	};
+}
+
 /**
  * Ambil daftar batch stok dari backend (GET /logistics/stock-batches).
  * Response memuat `data` (batch ter-mapping), `summary` (agregat) dan `meta`
@@ -926,59 +1022,7 @@ export async function fetchStockBatches(params?: {
 			`/logistics/stock-batches${qs ? `?${qs}` : ''}`
 		);
 
-		const nowDate = new Date();
-		const ninetyDaysFromNow = new Date();
-		ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
-
-		const data = (result.data ?? []).map((batch: any) => {
-			const expDate = batch.exp_date ? new Date(batch.exp_date) : null;
-			const currentStock = Number(batch.current_stock ?? 0);
-			const initialStock = Number(batch.initial_stock ?? 0);
-
-			const isExpired = expDate ? expDate < nowDate : false;
-			const isNearExpiry = expDate ? !isExpired && expDate <= ninetyDaysFromNow : false;
-			const isEmpty = currentStock <= 0;
-
-			return {
-				id: batch.id,
-				batch_number: batch.batch_number,
-				exp_date: batch.exp_date,
-				buy_price: Number(batch.buy_price ?? 0),
-				initial_stock: initialStock,
-				current_stock: currentStock,
-				// Sisa stok dalam persen — 100 berarti batch belum tersentuh.
-				remaining_percentage:
-					initialStock > 0 ? Math.round((currentStock / initialStock) * 100) : 0,
-				status: isEmpty
-					? 'OUT_OF_STOCK'
-					: isExpired
-						? 'EXPIRED'
-						: isNearExpiry
-							? 'NEAR_EXPIRY'
-							: 'AVAILABLE',
-				is_empty: isEmpty,
-				is_expired: isExpired,
-				is_near_expiry: isNearExpiry,
-				product: batch.product
-					? {
-							id: batch.product.id,
-							code: batch.product.code,
-							name: batch.product.name,
-							unit: batch.product.unit,
-							category: batch.product.category
-						}
-					: null,
-				warehouse: batch.warehouse
-					? {
-							id: batch.warehouse.id,
-							name: batch.warehouse.name,
-							type: batch.warehouse.type
-						}
-					: null,
-				createdAt: batch.createdAt,
-				updatedAt: batch.updatedAt
-			} as StockBatch;
-		});
+		const data = (result.data ?? []).map(mapStockBatch);
 
 		purchaseRows = data;
 		purchaseSummary = result.summary ?? null;
@@ -990,6 +1034,38 @@ export async function fetchStockBatches(params?: {
 	} finally {
 		isLoadingPurchases = false;
 	}
+}
+
+export async function fetchStockBatchesForRequest(warehouseId: string): Promise<StockBatch[]> {
+	if (!warehouseId) throw new Error('Gudang asal permintaan tidak tersedia.');
+
+	const batches: StockBatch[] = [];
+	const limit = 100;
+	let page = 1;
+	let totalPages = 1;
+
+	do {
+		const query = new URLSearchParams({
+			warehouse_id: warehouseId,
+			page: String(page),
+			limit: String(limit)
+		});
+		const response = await api.get<StockBatchListResponse>(
+			`/logistics/stock-batches?${query.toString()}`
+		);
+		if (!Array.isArray(response.data) || !response.meta) {
+			throw new Error('Format response batch stok tidak valid.');
+		}
+		if (!Number.isInteger(response.meta.totalPages) || response.meta.totalPages < page) {
+			throw new Error('Informasi halaman batch stok tidak valid.');
+		}
+
+		batches.push(...response.data.map(mapStockBatch));
+		totalPages = response.meta.totalPages;
+		page += 1;
+	} while (page <= totalPages);
+
+	return batches.filter((batch) => batch.current_stock > 0 && !batch.is_expired);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1128,16 +1204,24 @@ export async function fetchStockRequests(params?: {
 
 export async function updateStockRequest(
 	id: string,
-	status: 'APPROVED' | 'PARTIAL' | 'REJECTED',
-	approvals: Record<string, number>
+	status: 'APPROVED' | 'PARTIAL' | 'REJECTED' | 'SHIPPED',
+	allocations: Record<string, StockBatchAllocation[]> = {}
 ): Promise<StockRequest> {
 	isSubmitting = true;
 	error = null;
 	try {
 		const request = requestRows.find((row) => row.id === id);
 		if (!request) throw new Error('Permintaan tidak ditemukan');
-		if (request.status !== 'PENDING' && request.status !== 'PARTIAL') {
-			throw new Error('Hanya permintaan berstatus Menunggu atau Disetujui Sebagian yang dapat diperbarui.');
+		if (!request.from_warehouse_id || !request.to_warehouse_id) {
+			throw new Error('Gudang asal dan gudang tujuan permintaan wajib tersedia.');
+		}
+		const canUpdateApproval = request.status === 'PENDING' || request.status === 'PARTIAL';
+		const canTransition =
+			(status === 'SHIPPED' &&
+				(request.status === 'APPROVED' || request.status === 'PARTIAL')) ||
+			(status !== 'SHIPPED' && canUpdateApproval);
+		if (!canTransition) {
+			throw new Error('Status permintaan tidak mengizinkan perubahan yang dipilih.');
 		}
 		if (request.items.length === 0) {
 			throw new Error('Permintaan tanpa item tidak dapat disetujui atau ditolak.');
@@ -1159,51 +1243,80 @@ export async function updateStockRequest(
 			throw new Error('Data kuantiti item requisition tidak valid. Muat ulang data sebelum mencoba kembali.');
 		}
 
-		const items = request.items.map((item) => ({
-			requisition_item_id: item.id,
-			quantity_approved:
-				status === 'REJECTED' ? (item.approved_qty ?? 0) : Number(approvals[item.id])
-		}));
+		const items =
+			status === 'REJECTED'
+				? request.items.map((item) => ({
+						requisition_item_id: item.id,
+						quantity_approved: item.approved_qty ?? 0
+					}))
+				: request.items.flatMap((item) =>
+						(allocations[item.id] ?? [])
+							.filter((allocation) => allocation.quantity_approved > 0)
+							.map((allocation) => ({
+								requisition_item_id: item.id,
+								stock_batch_id: allocation.stock_batch_id,
+								quantity_approved: allocation.quantity_approved
+							}))
+					);
+
 		if (
 			items.some(
-				(item) => !Number.isInteger(item.quantity_approved) || item.quantity_approved < 0
+				(item) =>
+					!Number.isInteger(item.quantity_approved) ||
+					item.quantity_approved < 0 ||
+					('stock_batch_id' in item && !item.stock_batch_id)
 			)
 		) {
-			throw new Error('Kuantiti persetujuan harus berupa bilangan bulat nol atau lebih.');
+			throw new Error('Setiap alokasi harus memiliki batch dan kuantiti bilangan bulat nol atau lebih.');
 		}
-		if (status === 'APPROVED') {
-			const hasMismatch = request.items.some(
-				(item, index) => items[index].quantity_approved !== item.requested_qty
+
+		const allocatedTotals = new Map<string, number>();
+		for (const allocation of items) {
+			allocatedTotals.set(
+				allocation.requisition_item_id,
+				(allocatedTotals.get(allocation.requisition_item_id) ?? 0) +
+					allocation.quantity_approved
 			);
-			if (hasMismatch) {
+		}
+		const invalidTotal = request.items.find((item) => {
+			const total = allocatedTotals.get(item.id) ?? 0;
+			if (status === 'APPROVED') return total !== item.requested_qty;
+			if (status === 'PARTIAL') {
+				return total <= 0 || total < (item.approved_qty ?? 0) || total >= item.requested_qty;
+			}
+			if (status === 'SHIPPED') {
+				return total <= 0 || total !== (item.approved_qty ?? item.requested_qty);
+			}
+			return false;
+		});
+		if (invalidTotal) {
+			if (status === 'APPROVED') {
+				throw new Error('Total kuantiti batch yang dialokasikan harus sama dengan kuantiti permintaan.');
+			}
+			if (status === 'PARTIAL') {
 				throw new Error(
-					'Untuk persetujuan penuh, kuantiti setiap barang harus sama dengan kuantiti yang diminta.'
+					'Total alokasi harus lebih dari nol, tidak kurang dari persetujuan sebelumnya, dan lebih kecil dari kuantiti permintaan.'
 				);
+			}
+			if (status === 'SHIPPED') {
+				throw new Error('Total alokasi batch yang dikirim harus sama dengan kuantiti yang disetujui.');
 			}
 		}
-		if (status === 'PARTIAL') {
-			const hasInvalidQuantity = request.items.some((item, index) => {
-				const nextApproved = items[index].quantity_approved;
-				const currentApproved = item.approved_qty ?? 0;
-				return (
-					nextApproved <= 0 ||
-					nextApproved < currentApproved ||
-					nextApproved > item.requested_qty
-				);
-			});
-			if (hasInvalidQuantity) {
-				throw new Error(
-					'Kuantiti tiap barang harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.'
-				);
-			}
-			if (request.items.every((item, index) => items[index].quantity_approved === item.requested_qty)) {
-				throw new Error('Gunakan status persetujuan penuh jika semua kuantiti disetujui.');
-			}
+		if (
+			status === 'PARTIAL' &&
+			request.items.every((item) => allocatedTotals.get(item.id) === item.requested_qty)
+		) {
+			throw new Error('Gunakan status persetujuan penuh jika semua kuantiti sudah terpenuhi.');
 		}
 
 		const response = await api.patch<RequisitionUpdateResponse>(
 			`/logistics/requisitions/${encodeURIComponent(id)}`,
-			{ status, items }
+			{
+				status,
+				from_warehouse_id: request.from_warehouse_id,
+				to_warehouse_id: request.to_warehouse_id,
+				items
+			}
 		);
 		if (!response.data) throw new Error('Response update requisition tidak berisi data.');
 		const updatedRequest = mapRequisition(response.data);
@@ -1417,6 +1530,7 @@ export const logistik = {
 	fetchStockMatrix,
 	restockProduct,
 	fetchStockBatches,
+	fetchStockBatchesForRequest,
 	fetchInventoryLogs,
 	adjustStock,
 	fetchStockRequests,

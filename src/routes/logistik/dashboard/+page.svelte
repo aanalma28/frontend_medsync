@@ -26,6 +26,8 @@
 		STOCK_BATCH_STATUS_VARIANTS,
 		type InventoryLogType,
 		type Product,
+		type StockBatch,
+		type StockBatchAllocation,
 		type StockRequest
 	} from '$lib/stores/logistik.svelte';
 	import {
@@ -370,19 +372,95 @@
 	}
 
 	let detailRequest = $state<StockRequest | null>(null);
-	let approvalQuantities = $state<Record<string, number>>({});
+	let approvalAllocations = $state<Record<string, StockBatchAllocation[]>>({});
+	let approvalBatches = $state<StockBatch[]>([]);
+	let isLoadingApprovalBatches = $state(false);
 	let approvalError = $state('');
 	let rejectOpen = $state(false);
 	let rejectTargetId = $state<string | null>(null);
 	let rejectError = $state('');
 	let processingRequestId = $state<string | null>(null);
 
-	function openRequestDetail(request: StockRequest) {
+	async function openRequestDetail(request: StockRequest) {
 		detailRequest = request;
-		approvalQuantities = Object.fromEntries(
-			request.items.map((item) => [item.id, item.approved_qty ?? item.requested_qty])
+		approvalAllocations = Object.fromEntries(
+			request.items.map((item) => [
+				item.id,
+				(item.batch_allocations ??
+					(item.stock_batch_id && (item.approved_qty ?? 0) > 0
+						? [
+								{
+									stock_batch_id: item.stock_batch_id,
+									quantity_approved: item.approved_qty ?? 0
+								}
+							]
+						: [])
+				).map((allocation) => ({ ...allocation }))
+			])
 		);
+		approvalBatches = [];
 		approvalError = '';
+		if (!canUpdateApproval(request) && !canFulfill(request)) {
+			isLoadingApprovalBatches = false;
+			return;
+		}
+		isLoadingApprovalBatches = true;
+		try {
+			const batches = await logistik.fetchStockBatchesForRequest(request.from_warehouse_id);
+			if (detailRequest?.id === request.id) approvalBatches = batches;
+		} catch (err) {
+			if (detailRequest?.id === request.id) {
+				approvalError =
+					err instanceof Error ? err.message : 'Gagal memuat batch stok untuk permintaan.';
+				toast.error('Gagal memuat batch stok', approvalError);
+			}
+		} finally {
+			if (detailRequest?.id === request.id) isLoadingApprovalBatches = false;
+		}
+	}
+
+	function closeRequestDetail() {
+		detailRequest = null;
+		isLoadingApprovalBatches = false;
+	}
+
+	function batchesForRequestItem(item: StockRequest['items'][number]): StockBatch[] {
+		return approvalBatches.filter((batch) => batch.product?.id === item.product_id);
+	}
+
+	function allocationsForRequestItem(item: StockRequest['items'][number]): StockBatchAllocation[] {
+		return approvalAllocations[item.id] ?? [];
+	}
+
+	function approvedQuantityForItem(item: StockRequest['items'][number]): number {
+		return allocationsForRequestItem(item).reduce(
+			(total, allocation) => total + allocation.quantity_approved,
+			0
+		);
+	}
+
+	function quantityForBatch(itemId: string, batchId: string): number {
+		return (
+			approvalAllocations[itemId]?.find((allocation) => allocation.stock_batch_id === batchId)
+				?.quantity_approved ?? 0
+		);
+	}
+
+	function setBatchAllocation(itemId: string, batchId: string, quantity: number) {
+		const allocations = approvalAllocations[itemId] ?? [];
+		const existingAllocation = allocations.find(
+			(allocation) => allocation.stock_batch_id === batchId
+		);
+		approvalAllocations[itemId] =
+			quantity > 0
+				? existingAllocation
+					? allocations.map((allocation) =>
+							allocation.stock_batch_id === batchId
+								? { ...allocation, quantity_approved: quantity }
+								: allocation
+						)
+					: [...allocations, { stock_batch_id: batchId, quantity_approved: quantity }]
+				: allocations.filter((allocation) => allocation.stock_batch_id !== batchId);
 	}
 
 	async function saveRequestApproval(request: StockRequest, status: 'APPROVED' | 'PARTIAL') {
@@ -393,39 +471,70 @@
 		}
 		if (status === 'APPROVED') {
 			window.alert(
-				'Setujui Penuh akan menyetujui seluruh kuantiti yang diminta. Nilai pada kolom Kuantiti Disetujui tidak berpengaruh.'
+				'Pastikan total alokasi kuantiti dari batch untuk setiap produk sama dengan kuantiti yang diminta.'
 			);
 			if (!window.confirm(`Lanjutkan Setujui Penuh untuk permintaan ${request.no_trx}?`)) return;
 		}
-		const quantities = Object.fromEntries(
-			request.items.map((item) => [
-				item.id,
-				status === 'APPROVED' ? item.requested_qty : Number(approvalQuantities[item.id])
-			])
-		);
 		const invalidItem = request.items.find((item) => {
-			const quantity = quantities[item.id];
+			const allocations = allocationsForRequestItem(item);
+			const quantity = approvedQuantityForItem(item);
 			const minimum = item.approved_qty ?? 0;
+			if (
+				allocations.some(
+					(allocation) =>
+						!Number.isInteger(allocation.quantity_approved) ||
+						allocation.quantity_approved <= 0 ||
+						!allocation.stock_batch_id
+				)
+			) {
+				return true;
+			}
 			return (
 				!Number.isFinite(quantity) ||
 				!Number.isInteger(quantity) ||
-				quantity < 0 ||
 				(status === 'APPROVED' && quantity !== item.requested_qty) ||
 				(status === 'PARTIAL' && quantity <= 0) ||
 				(status === 'PARTIAL' && quantity < minimum) ||
-				quantity > item.requested_qty
+				quantity > item.requested_qty ||
+				allocations.length === 0
 			);
 		});
 		if (invalidItem) {
 			approvalError =
 				status === 'APPROVED'
-					? 'Untuk setujui penuh, isi kuantiti persetujuan sama persis dengan kuantiti yang diminta pada setiap produk.'
-					: 'Kuantiti harus lebih dari 0, tidak boleh kurang dari jumlah yang telah disetujui, dan tidak boleh melebihi jumlah yang diminta.';
+					? 'Total kuantiti dari batch yang dipilih harus sama persis dengan kuantiti permintaan pada setiap produk.'
+					: 'Total alokasi harus lebih dari 0, tidak kurang dari jumlah yang sudah disetujui, dan tidak melebihi kuantiti permintaan.';
+			return;
+		}
+		const allocatedByBatch = new Map<string, number>();
+		let invalidBatchAllocation = false;
+		for (const item of request.items) {
+			for (const allocation of allocationsForRequestItem(item)) {
+				const batch = batchesForRequestItem(item).find(
+					(candidate) => candidate.id === allocation.stock_batch_id
+				);
+				if (!batch) {
+					invalidBatchAllocation = true;
+					break;
+				}
+				const allocated =
+					(allocatedByBatch.get(batch.id) ?? 0) + allocation.quantity_approved;
+				allocatedByBatch.set(batch.id, allocated);
+				if (batch.current_stock < allocated) {
+					invalidBatchAllocation = true;
+					break;
+				}
+			}
+			if (invalidBatchAllocation) break;
+		}
+		if (invalidBatchAllocation) {
+			approvalError =
+				'Pastikan setiap alokasi menggunakan batch yang tersedia dan total alokasi tiap batch tidak melebihi stoknya.';
 			return;
 		}
 		if (
 			status === 'PARTIAL' &&
-			request.items.every((item) => quantities[item.id] === item.requested_qty)
+			request.items.every((item) => approvedQuantityForItem(item) === item.requested_qty)
 		) {
 			approvalError = 'Semua kuantiti sudah penuh. Gunakan tombol Setujui Penuh.';
 			return;
@@ -433,8 +542,19 @@
 
 		processingRequestId = request.id;
 		try {
-			const updatedRequest = await logistik.updateStockRequest(request.id, status, quantities);
-			detailRequest = updatedRequest;
+			const updatedRequest = await logistik.updateStockRequest(
+				request.id,
+				status,
+				approvalAllocations
+			);
+			detailRequest = {
+				...updatedRequest,
+				items: updatedRequest.items.map((item) => ({
+					...item,
+					approved_qty: approvedQuantityForItem(item),
+					batch_allocations: allocationsForRequestItem(item)
+				}))
+			};
 			toast.success(
 				updatedRequest.status === 'PARTIAL'
 					? 'Permintaan disetujui sebagian'
@@ -482,8 +602,8 @@
 		if (!confirm(`Proses distribusi untuk ${request.no_trx}?`)) return;
 		processingRequestId = request.id;
 		try {
-			await logistik.fulfillStockRequest(request.id);
-			toast.success('Distribusi diproses', `${request.no_trx} telah dikirim ke unit tujuan.`);
+			await logistik.updateStockRequest(request.id, 'SHIPPED', approvalAllocations);
+			toast.success('Barang dikirim', `${request.no_trx} telah dikirim ke unit tujuan.`);
 			await loadRequests();
 			await loadStock();
 			await loadOverview();
@@ -1954,9 +2074,9 @@
 <Modal
 	open={!!detailRequest}
 	title={`Detail Permintaan ${detailRequest?.no_trx ?? ''}`}
-	description="Periksa kuantiti setiap barang dan tetapkan persetujuan permintaan."
+	description="Periksa kuantiti yang disetujui dan pilih batch stok gudang asal untuk setiap barang."
 	size="lg"
-	onclose={() => (detailRequest = null)}
+	onclose={closeRequestDetail}
 >
 	{#if detailRequest}
 		<div class="space-y-4">
@@ -2004,9 +2124,8 @@
 
 			{#if canUpdateApproval(detailRequest)}
 				<p class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-					<strong>Setujui Penuh:</strong> kuantiti persetujuan otomatis menjadi sama dengan kuantiti
-					yang diminta untuk setiap produk. Nilai pada kolom Kuantiti Disetujui tidak berpengaruh
-					jika opsi ini dipilih.
+					Alokasikan kuantiti yang akan disetujui pada satu atau beberapa batch untuk setiap produk.
+					Total alokasi harus sesuai dengan status persetujuan yang dipilih.
 				</p>
 			{/if}
 
@@ -2014,39 +2133,109 @@
 				<table class="w-full text-sm">
 					<thead class="bg-slate-50 text-xs uppercase text-slate-500">
 						<tr>
-							<th class="px-3 py-2 text-left font-medium">Produk</th>
+							<th class="px-3 py-2 text-left font-medium">Produk &amp; Alokasi Batch</th>
 							<th class="px-3 py-2 text-right font-medium">Diminta</th>
-							<th class="px-3 py-2 text-right font-medium">Kuantiti Disetujui</th>
+							<th class="px-3 py-2 text-right font-medium">Total Disetujui</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-slate-100">
 						{#each detailRequest.items as item (item.id)}
 							<tr>
-								<td class="px-3 py-2 text-slate-700">
-									{item.product_name ?? logistik.productById(item.product_id)?.name ?? '-'}
-									{#if item.product_code}
-										<span class="ml-1 text-xs text-slate-400">({item.product_code})</span>
+								<td class="px-3 py-3">
+									<div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+										<div>
+											<p class="font-semibold text-slate-800">
+												{item.product_name ?? logistik.productById(item.product_id)?.name ?? '-'}
+												{#if item.product_code}
+													<span class="ml-1 text-xs font-normal text-slate-400">
+														({item.product_code})
+													</span>
+												{/if}
+											</p>
+										</div>
+										<p class="text-xs font-semibold text-sky-700">
+											Total alokasi: {formatNumber(approvedQuantityForItem(item))}
+											{item.unit ?? logistik.productById(item.product_id)?.unit ?? ''}
+										</p>
+									</div>
+
+									{#if canUpdateApproval(detailRequest)}
+										{#if isLoadingApprovalBatches}
+											<p class="rounded-lg bg-slate-50 px-3 py-3 text-xs text-slate-500">
+												Memuat batch stok…
+											</p>
+										{:else if batchesForRequestItem(item).length === 0}
+											<p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+												Tidak ada batch produk ini yang tersedia di gudang asal.
+											</p>
+										{:else}
+											<div class="grid gap-2 sm:grid-cols-2">
+												{#each batchesForRequestItem(item) as batch (batch.id)}
+													<label
+														class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3"
+													>
+														<span class="min-w-0">
+															<span class="block truncate text-xs font-semibold text-slate-800">
+																{batch.batch_number}
+															</span>
+															<span class="mt-0.5 block text-[11px] text-slate-500">
+																Stok {formatNumber(batch.current_stock)} · ED
+																{batch.exp_date ? formatDateTime(batch.exp_date) : '-'}
+															</span>
+														</span>
+														<span class="shrink-0 text-right">
+															<span class="block text-[10px] font-medium text-slate-500">
+																Alokasi
+															</span>
+															<input
+																type="number"
+																min="0"
+																max={batch.current_stock}
+																step="1"
+																aria-label={`Kuantiti alokasi batch ${batch.batch_number} untuk ${item.product_name ?? 'produk'}`}
+																value={quantityForBatch(item.id, batch.id) || ''}
+																oninput={(event) =>
+																	setBatchAllocation(
+																		item.id,
+																		batch.id,
+																		Number(event.currentTarget.value) || 0
+																	)}
+																class="mt-1 w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-sky-500"
+															/>
+														</span>
+													</label>
+												{/each}
+											</div>
+										{/if}
+									{:else}
+										<div class="grid gap-2 sm:grid-cols-2">
+											{#each allocationsForRequestItem(item) as allocation (allocation.stock_batch_id)}
+												{@const batch = approvalBatches.find(
+													(row) => row.id === allocation.stock_batch_id
+												)}
+												<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+													<p class="font-semibold text-slate-800">
+														{batch?.batch_number ?? allocation.stock_batch_id}
+													</p>
+													<p class="mt-0.5 text-slate-500">
+														Alokasi {formatNumber(allocation.quantity_approved)}
+														{item.unit ?? logistik.productById(item.product_id)?.unit ?? ''}
+													</p>
+												</div>
+											{:else}
+												<p class="text-xs text-slate-400">Belum ada alokasi batch.</p>
+											{/each}
+										</div>
 									{/if}
-									<span class="ml-1 text-xs text-slate-400">
-										{item.unit ?? logistik.productById(item.product_id)?.unit ?? ''}
-									</span>
 								</td>
-								<td class="px-3 py-2 text-right text-slate-600">
+								<td class="whitespace-nowrap px-3 py-3 text-right text-slate-600">
 									{formatNumber(item.requested_qty)}
 								</td>
-								<td class="px-3 py-2 text-right font-medium text-slate-800">
-									{#if canUpdateApproval(detailRequest)}
-										<input
-											type="number"
-											min={Math.max(1, item.approved_qty ?? 0)}
-											max={item.requested_qty}
-											step="1"
-											aria-label={`Kuantiti disetujui untuk ${item.product_name ?? logistik.productById(item.product_id)?.name ?? 'produk'}`}
-											bind:value={approvalQuantities[item.id]}
-											class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-sky-500"
-										/>
+								<td class="whitespace-nowrap px-3 py-3 text-right font-semibold text-slate-800">
+									{#if item.approved_qty === null && !canUpdateApproval(detailRequest)}
+										-
 									{:else}
-										{item.approved_qty === null ? '-' : formatNumber(item.approved_qty)}
+										{formatNumber(approvedQuantityForItem(item))}
 									{/if}
 								</td>
 							</tr>
@@ -2061,7 +2250,7 @@
 		<button
 			type="button"
 			class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-			onclick={() => (detailRequest = null)}
+			onclick={closeRequestDetail}
 		>
 			Tutup
 		</button>
@@ -2078,7 +2267,7 @@
 			{/if}
 			<button
 				type="button"
-				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting || isLoadingApprovalBatches}
 				class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
 				onclick={() => saveRequestApproval(detailRequest!, 'PARTIAL')}
 			>
@@ -2086,7 +2275,7 @@
 			</button>
 			<button
 				type="button"
-				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting}
+				disabled={processingRequestId === detailRequest.id || logistik.isSubmitting || isLoadingApprovalBatches}
 				class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
 				onclick={() => saveRequestApproval(detailRequest!, 'APPROVED')}
 			>
@@ -2109,7 +2298,7 @@
 				class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
 				onclick={() => fulfillRequest(detailRequest!)}
 			>
-				Kirim Distribusi
+				Kirim Barang
 			</button>
 		{/if}
 	{/snippet}
